@@ -280,10 +280,20 @@ function M:Render()
 end
 
 function M:PlaceMarker(marker,x,y,space)
-    if space~=self.view.space then marker:Hide(); return end
+    if space~=self.view.space then if marker:IsShown() then marker:Hide() end;return end
     local sx,sy=self:ToScreen(x,y)
-    if sx<10 or sy<10 or sx>self.view.width-10 or sy>self.view.height-10 then marker:Hide(); return end
-    marker:ClearAllPoints(); marker:SetPoint("CENTER",self.viewport,"TOPLEFT",sx,-sy); marker:Show()
+    if sx<10 or sy<10 or sx>self.view.width-10 or sy>self.view.height-10 then
+        if marker:IsShown() then marker:Hide() end;return
+    end
+    local parent=marker:GetParent()
+    -- This function owns marker anchors. Any new anchor writer must invalidate
+    -- zMapPointViewport; hiding/reusing a marker does not invalidate its point.
+    if marker.zMapPointX~=sx or marker.zMapPointY~=sy or marker.zMapPointViewport~=self.viewport or marker.zMapPointParent~=parent then
+        marker:ClearAllPoints();marker:SetPoint("CENTER",self.viewport,"TOPLEFT",sx,-sy)
+        marker.zMapPointX=sx;marker.zMapPointY=sy;marker.zMapPointViewport=self.viewport;marker.zMapPointParent=parent
+    end
+    -- Consult the actual shown flag: other render paths can hide this frame.
+    if not marker:IsShown() then marker:Show() end
 end
 function M:RenderMarkers()
     if not self.playerMarker then return end

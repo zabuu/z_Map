@@ -1,6 +1,35 @@
 local M=zMap
 local PREFIX="Interface\\AddOns\\z_Map\\Media\\Transports14\\"
 local WHITE="Interface\\Buttons\\WHITE8X8"
+local BOAT,ZEPPELIN=PREFIX.."Boat",PREFIX.."Zeppelin"
+local function hide(region) if region:IsShown() then region:Hide() end end
+local function styleMarker(marker,kind,style,size,level)
+    local icon,badge=marker.icon,marker.badge;local parent=marker:GetParent()
+    local path=kind=="zeppelin" and ZEPPELIN or BOAT
+    local textureChanged=marker.path~=path or marker.zMapTransportIcon~=icon
+    if textureChanged then icon:SetTexture(path);marker.path=path end
+    -- These regions are styled only here and during construction. Reapply if
+    -- their owner/regions change, while keeping motion and visibility independent.
+    if textureChanged or marker.zMapTransportStyle~=style or marker.zMapTransportBadge~=badge then
+        if style=="estimated" then
+            icon:SetVertexColor(.65,.7,.75,.72);badge:SetText("~");badge:SetTextColor(.85,.9,.95)
+        elseif style=="shared" then
+            icon:SetVertexColor(.6,.86,1,1);badge:SetText("+");badge:SetTextColor(.4,.8,1)
+        elseif style=="dock" then icon:SetVertexColor(.72,.78,.81,.92)
+        else icon:SetVertexColor(1,1,1,1) end
+        marker.zMapTransportStyle=style;marker.zMapTransportIcon=icon;marker.zMapTransportBadge=badge
+    end
+    if marker.zMapTransportSize~=size or marker.zMapTransportParent~=parent then
+        marker:SetWidth(size);marker:SetHeight(size);marker.zMapTransportSize=size
+    end
+    if level and (marker.zMapTransportLevel~=level or marker.zMapTransportParent~=parent) then
+        marker:SetFrameLevel(level);marker.zMapTransportLevel=level
+    end
+    marker.zMapTransportParent=parent
+    if style=="estimated" or style=="shared" then
+        if not badge:IsShown() then badge:Show() end
+    else hide(badge) end
+end
 local function clock(seconds)
     seconds=math.max(0,math.ceil(seconds));return string.format("%d:%02d",math.floor(seconds/60),math.mod(seconds,60))
 end
@@ -150,10 +179,7 @@ function M:RenderTransports()
         local marker=self.transportDockMarkers[i]
         if not marker then marker=self:MakeTransportMarker();self.transportDockMarkers[i]=marker end
         marker.vehicle=nil;marker.stops=group.stops
-        local path=PREFIX..(group.kind=="zeppelin" and "Zeppelin" or "Boat")
-        if marker.path~=path then marker.icon:SetTexture(path);marker.path=path end
-        marker.icon:SetVertexColor(.72,.78,.81,.92)
-        local size=span>20000 and 13 or 18;marker:SetWidth(size);marker:SetHeight(size)
+        styleMarker(marker,group.kind,"dock",span>20000 and 13 or 18)
         self:PlaceMarker(marker,group.x,group.y,"world")
         local show=zMapDB.transportTimers and span<14000 and group.sx<self.view.width-215
         if show then
@@ -168,10 +194,13 @@ function M:RenderTransports()
             if string.len(name)>20 then name=string.sub(name,1,18)..".." end
             value=name.." "..value
             if table.getn(group.stops)>1 then value=value.." (+"..(table.getn(group.stops)-1)..")" end
-            marker.label:SetText(value);marker.label:Show();table.insert(labels,{x=group.sx,y=group.sy})
-        else marker.label:Hide() end
+            if marker.zMapTransportLabelText~=value or marker.zMapTransportLabel~=marker.label then
+                marker.label:SetText(value);marker.zMapTransportLabelText=value;marker.zMapTransportLabel=marker.label
+            end
+            if not marker.label:IsShown() then marker.label:Show() end;table.insert(labels,{x=group.sx,y=group.sy})
+        else hide(marker.label) end
     end
-    for i=table.getn(groups)+1,table.getn(self.transportDockMarkers) do self.transportDockMarkers[i]:Hide() end
+    for i=table.getn(groups)+1,table.getn(self.transportDockMarkers) do hide(self.transportDockMarkers[i]) end
     self:RenderTransportVehicles()
     if self.hoveredTransport then self:ShowTransportTooltip(self.hoveredTransport) end
 end
@@ -179,6 +208,7 @@ function M:RenderTransportVehicles()
     if not self.layers or not self.layers.transit then return end
     local visible=zMapDB.transportsEnabled and self.view.space=="world";local now=self:TransportNow()
     self.transportVehicleByEntry=self.transportVehicleByEntry or {}
+    local level=visible and self.layers.transit:GetFrameLevel()+1
     if visible then for _,route in ipairs(self.transportRoutes) do
         local live=self:TransportVehiclePose(route,now)
         local marker=self.transportVehicleByEntry[route.entry]
@@ -187,20 +217,13 @@ function M:RenderTransportVehicles()
                 marker=self:MakeTransportMarker();self.transportVehicleByEntry[route.entry]=marker
                 table.insert(self.transportVehicleMarkers,marker)
             end
-            marker.vehicle=live;marker.stops=nil;marker.label:Hide()
-            local path=PREFIX..(route.kind=="zeppelin" and "Zeppelin" or "Boat")
-            if marker.path~=path then marker.icon:SetTexture(path);marker.path=path end
-            if live.source=="estimated" then
-                marker.icon:SetVertexColor(.65,.7,.75,.72);marker.badge:SetText("~");marker.badge:SetTextColor(.85,.9,.95);marker.badge:Show()
-            elseif live.source=="shared" then
-                marker.icon:SetVertexColor(.6,.86,1,1);marker.badge:SetText("+");marker.badge:SetTextColor(.4,.8,1);marker.badge:Show()
-            else marker.icon:SetVertexColor(1,1,1,1);marker.badge:Hide() end
-            marker:SetWidth(25);marker:SetHeight(25)
-            marker:SetFrameLevel(self.layers.transit:GetFrameLevel()+1)
+            marker.vehicle=live;marker.stops=nil;hide(marker.label)
+            local style=live.source=="estimated" and "estimated" or live.source=="shared" and "shared" or "local"
+            styleMarker(marker,route.kind,style,25,level)
             self:PlaceMarker(marker,live.x,live.y,"world")
-        elseif marker then marker:Hide() end
+        elseif marker then hide(marker) end
     end end
-    if not visible then for _,marker in ipairs(self.transportVehicleMarkers) do marker:Hide() end end
+    if not visible then for _,marker in ipairs(self.transportVehicleMarkers) do hide(marker) end end
 end
 function M:FocusTransport(route)
     local stop=route.stops[1];zMapDB.follow=false;self.animation=nil;self.focus=nil
