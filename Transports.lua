@@ -1,5 +1,5 @@
 -- Native route coordinates; read-only optional ZepSense/OctoBus adapters.
--- A schedule is never represented as a directly observed transport position.
+-- Observations, shared reports and model predictions keep distinct display states.
 local M=zMap
 local function number(n) return type(n)=="number" and n==n and math.abs(n)<100000000000 end
 local function period(n) return number(n) and n>=120 and n<=1800 end
@@ -53,22 +53,27 @@ function M:InitializeTransports()
         end
         route.state=state;self.transportRuntime[route.id]={}
     end
+    self:InitializeTransportMotion();self:InitializeTransportSync()
     local driver=CreateFrame("Frame");self.transportDriver=driver
-    for _,name in ipairs({"PLAYER_ENTERING_WORLD","PLAYER_LEAVING_WORLD","CHAT_MSG_SYSTEM"}) do driver:RegisterEvent(name) end
+    for _,name in ipairs({"PLAYER_ENTERING_WORLD","PLAYER_LEAVING_WORLD","CHAT_MSG_SYSTEM","CHAT_MSG_CHANNEL","CHAT_MSG_CHANNEL_NOTICE"}) do driver:RegisterEvent(name) end
     driver:SetScript("OnEvent",function()
         if not M.ready then return end
         if event=="PLAYER_LEAVING_WORLD" then M.transportWorld=false;M:ClearTransportObservations()
         elseif event=="PLAYER_ENTERING_WORLD" then
             M.transportWorld=true;M.transportClockReady=false;M.transportUptimeConfirmed=false;M.transportQueryAt=M:TransportNow()+8;M:ClearTransportObservations()
+            M:ResetTransportSyncSession()
         elseif event=="CHAT_MSG_SYSTEM" then
             local uptime=M:ParseTransportUptime(arg1)
             if uptime then M:OnTransportBoot(M:TransportNow()-uptime);M.transportUptimeConfirmed=true;M.transportQueryAt=nil end
+        elseif event=="CHAT_MSG_CHANNEL" then M:ReceiveTransportShare(arg1,arg2,arg9)
+        elseif event=="CHAT_MSG_CHANNEL_NOTICE" and type(arg9)=="string" and string.lower(arg9)=="zmaptransit15" then M:HideTransportChannel()
         end
     end)
     driver:SetScript("OnUpdate",function() if M.ready then M:UpdateTransports(arg1 or 0) end end)
 end
 function M:ClearTransportObservations()
     self.transportLive={};self.transportCandidates={};self.transportProviderReady=false
+    self:ResetTransportMotionTracking()
     self:HideTransportTooltip()
     if self.layers then self:RenderTransports() end
 end
@@ -91,6 +96,7 @@ function M:OnTransportBoot(boot)
     local old=self.transportLog.boot
     if self.transportClockReady and number(old) and math.abs(old-boot)<=3 then return end
     if self.transportClockReady and number(old) and boot<old-3 then return end
+    if number(old) and math.abs(old-boot)>3 then self:ResetTransportMotionTracking();self:ResetTransportSyncSession() end
     self.transportClockReady=true;self.transportLog.boot=boot
     for _,route in ipairs(self.transportRoutes) do
         for i,value in pairs(route.state.arrivals) do
@@ -162,14 +168,17 @@ function M:TransportStopStatus(stop,now)
     now=now or self:TransportNow()
     local live=self.transportLive[stop.route.entry]
     local observed=live and now-live.at<=1.5 and live.stop==stop.index
+    local remote=self.transportRemote[stop.route.entry]
+    local shared=zMapDB.transportSharing and remote and now-remote.at<=5 and remote.stop==stop.index
     local anchor,p,stay,source=self:TransportSchedule(stop.route,stop.index)
     if anchor then
         local phase=math.mod(now-anchor,p);if phase<0 then phase=phase+p end
-        if phase<stay then return observed and "docked" or "expected",stay-phase,source end
+        if phase<stay then return observed and "docked" or shared and "reported" or "expected",stay-phase,source end
         if observed then return "docked",nil,"departure not calibrated" end
+        if shared then return "reported",nil,"shared dock sighting" end
         return "arriving",p-phase,source
     end
-    return observed and "docked" or "unknown",nil,"awaiting a dock observation"
+    return observed and "docked" or shared and "reported" or "unknown",nil,shared and "shared dock sighting" or "awaiting a dock observation"
 end
 function M:ObserveTransportArrival(route,index,at)
     local old=route.state.arrivals[index];local p=route.state.period
@@ -247,7 +256,8 @@ function M:SampleTransports()
                     if candidate.canArrive then candidate.arrival=candidate.since;self:ObserveTransportArrival(route,stopIndex,candidate.arrival) end
                 end
                 candidate.initial=false;candidate.at=now
-                self.transportLive[entry]={guid=guid,route=route,map=map,x=ax,y=ay,worldX=x,worldY=y,z=z,at=now,stop=stopIndex}
+                local pose={guid=guid,route=route,map=map,x=ax,y=ay,worldX=x,worldY=y,z=z,at=now,stop=stopIndex}
+                self:RecordTransportSighting(pose,false);self.transportLive[entry]=pose
                 present[entry]=true
             end
         end
@@ -269,4 +279,5 @@ function M:UpdateTransports(elapsed)
         if self.frame and self.frame:IsShown() then self:RenderTransports() end
         if self.transportPanel and self.transportPanel:IsShown() then self:RefreshTransportPanel() end
     end
+    self:UpdateTransportSync(elapsed);self:AnimateTransportMarkers(elapsed)
 end

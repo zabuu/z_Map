@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0 — October 17, 2026
+
+- Added animated positions outside local detection range using native transport geometry and known dock/leg timing. Muted `~` vehicle pins identify estimates; loading transitions are skipped and unknown timing never gets an assumed half-cycle flight.
+- Added bounded, realm-scoped recordings of actual time/progress along each direction: 64 samples per leg / 128 per service, retained for 14 days and checked against native geometry. Fresh sightings correct model phase; model output never teaches itself.
+- Added optional transport sharing over `zMapTransit15`: actual sightings, timestamped dock events and recorded speed profiles. Blue `+` pins distinguish shared sightings from local detection and predictions. Server uptime handles different PC clocks; repeated observations from different clients can learn an unseeded cycle together.
+- Added independent Predict, Record and Share controls. Sharing batches up to three records, limits packets to 230 bytes / one per second, suppresses duplicate broadcasters and backs off 30 seconds after send errors. Fresh local readings win; peers' reports are not rebroadcast as firsthand observations.
+- Animated marker updates run at most 20Hz while the map is visible, without repainting tiles/route dots; native scans remain 2Hz. Existing map/resource artwork and OctoBus/native binaries are unchanged.
+- Added 27 prediction/protocol regressions, including independent Lua clients, different PC clocks and the installed pfUI chat wrapper. All 115 offline checks pass. Live server prediction and sharing still need in-game validation. Restart WoW to load the new Lua modules.
+
 ## 1.4.0 — October 17, 2026
 
 - Added experimental Transit controls, actual berth/pier markers, arrival/departure estimates, hover details and a scrolling service list. Native client data covers 13 routes / 26 terminals; three uncached classic services are explicitly unconfirmed.
