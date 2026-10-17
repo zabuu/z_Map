@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="ZMAP_TOGGLE" header="ZSUITE">
+        zMap:Toggle()
+    </Binding>
+</Bindings>
