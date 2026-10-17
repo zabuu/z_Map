@@ -11,3 +11,5 @@ The world map paintings, exploration overlays, minimap terrain/building renders 
 `Media/Caves21` contains locally assembled and georeferenced WMO cave/mining/crypt/tunnel minimap images from the same client, with soft transparent edges. This artwork remains the property of its respective owners.
 
 `Media/GatherVisuals33` contains code-generated geometric rings and circular progress swipes. These assets contain no copied game artwork.
+
+`Media/Transports14` contains independently drawn geometric boat and zeppelin glyphs. Native route/terminal coordinates are facts extracted from this installation's TaxiPathNode table. Seven timing seed sets were inspected in OctoBus; no OctoBus addon code or artwork is included. See SOURCE.md for attribution and timing limits.

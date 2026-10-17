@@ -2,7 +2,7 @@
 ## Title: |cff59d9c5z|rMap
 ## Notes: zSuite seamless OctoWoW atlas with painted maps and close-up terrain.
 ## Author: Samer / Zab
-## Version: 1.3.3
+## Version: 1.4.0
 ## DefaultState: enabled
 ## OptionalDeps: pfUI, Magnify, Cartographer, ShaguTweaks
 ## SavedVariables: zMapDB
@@ -11,6 +11,7 @@ MapData.lua
 InteriorData.lua
 CaveData.lua
 GatherData.lua
+TransportData.lua
 Engine.lua
 Renderer.lua
 GatherLog.lua
@@ -19,5 +20,7 @@ GatherTimers.lua
 GatherVisuals.lua
 Gather.lua
 GatherUI.lua
+Transports.lua
+TransportUI.lua
 zMap.lua
 Bindings.xml

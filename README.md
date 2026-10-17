@@ -1,4 +1,4 @@
-# zMap 1.3.3
+# zMap 1.4.0
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -17,7 +17,19 @@ The map works without other addons or native extensions. Live gathering is optio
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
 
 
-Version 1.3.3 adds a thin gold rim to currently detected nodes. Resource icons shrink smoothly from 17px to 3px dots at zone level, then fade away before continent/world view. Group and player markers retain their normal behavior. Fully exit and restart WoW for the new rim/swipe textures.
+Version 1.4.0 adds **experimental zeppelin and boat tracking**. Open **Transit** in the header or `/zmap transit`. Terminal icons sit at the client's actual berths/piers; hover for both ends' arrival/departure estimates and their sources. The scrolling service list also centers the map on a terminal. Transit, route lines and map timer labels have separate saved switches. Fully exit and restart WoW for the new boat/zeppelin textures.
+
+With the separately installed **ZepSense** reader (`ZepTransports()`), brighter moving vehicle icons show the actual positions of transports loaded by your client, including docking and departure. They update twice per second, even with the map closed, and disappear when the client stops detecting them. No native update is installed by zMap. The atlas, route geometry and dock schedules work without that reader or any other addon. zAPI's gathering snapshot does not supply global transport positions.
+
+The catalogue contains 13 native client routes / 26 terminals, including Kargath, Thunder Bluff, Sparkwater–Revantusk and Alah'Thalas. Ten identities are present in this installation's object cache; three additional classic boat services have client paths but remain **Service unconfirmed** until observed on this server. Client route assets alone do not prove that a service is running.
+
+Seven services have measured cycle/dwell seeds from the installed OctoBus: the five zeppelin routes, Sparkwater–Revantusk and Ratchet–Booty Bay. zMap reads an already loaded `OctoBusDB` without modifying it, and otherwise requests server uptime once after entering the world with `.server info` to anchor restart estimates. Fresh dock sightings improve local anchors and dwell; repeated arrivals at the same terminal can learn an unseeded cycle estimate. Seeing a ship already docked does not invent its arrival time. Schedules save per realm, and a detected restart invalidates older arrival anchors. Timers need no open map. No new chat channel is joined for transport tracking.
+
+**All `~` times are estimates**, including OctoBus-derived schedules. Restart phases can drift; fresh local sightings take priority. Unmeasured services or terminal offsets show **Awaiting sync**, rather than an assumed half-cycle timer. In particular, the unmeasured Undercity end of Grom'gol–Undercity needs observation or a calibrated OctoBus offset. Unknown cycles need repeated visits to the same dock; a missed visit can initially produce a multiple-cycle estimate. This experimental build needs in-game timing checks.
+
+At wide zoom, faint dotted lines show schematic service connections across loading boundaries. At closer zoom, they follow the native client paths and skip teleport edges. These links are not predicted live vehicle positions. Nearby berth icons cluster at low zoom; their hover lists every service. Route dots are pooled, clipped and capped at 384; stationary timer refreshes reuse the route drawing.
+
+Version 1.3.3 adds a thin gold rim to currently detected nodes. Resource icons shrink smoothly from 17px to 3px dots at zone level, then fade away before continent/world view. Group and player markers retain their normal behavior.
 
 Respawn swipes use **learned estimates**, with that label on hover. A site needs at least three consistent respawn intervals, observed while you remain within 45 yards and 20 vertical yards with the map and live scans running continuously. Gaps over two seconds, loading, leaving range, scan errors and a hidden map cancel the learning observation. A subsequent disappearance near you starts the learned swipe. Unknown/variable sites stay untimed. The circular ring has no numbers, hides at dot zoom, clears on actual detection and disappears at the estimated end without turning the node colorful. Learned samples and an unexpired estimate save across sessions, while all locations still start unknown after login. Shared locations do not transfer timing estimates or live state.
 
@@ -57,6 +69,7 @@ Window position, size, view, style and pins save automatically. Your player mark
 | `/zmap` or `/zm` | Toggle zMap |
 | `/zmap nodes` | Open gathering, history, sharing and individual resource filters |
 | `/zmap nodes reset` | Restore Live, Logged and all resource visibility; keep the location log and sharing preference |
+| `/zmap transit` | Open boat/zeppelin services, routes and dock arrival/departure estimates |
 | `/zmap blizzard` | Open the original map, including other addons' normal map integrations |
 | `/zmap replace` | Toggle which map M opens |
 | `/zmap player` | Center on the player each time zMap opens |

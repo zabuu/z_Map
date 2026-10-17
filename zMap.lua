@@ -117,6 +117,7 @@ function M:Resize()
     v.height=max(100,self.frame:GetHeight()-110)
     self.viewport:SetWidth(v.width); self.viewport:SetHeight(v.height)
     self:LayoutGatherPanel()
+    self:LayoutTransportPanel()
     self:Constrain(); self.dirty=true
 end
 function M:FindMe()
@@ -229,6 +230,8 @@ function M:BuildUI()
     full:SetPoint("RIGHT",close,"LEFT",-5,0)
     self.layerButton=button(f,"Layer: auto",122,function() self:CycleLayer() end)
     self.layerButton:SetPoint("RIGHT",full,"LEFT",-6,0)
+    self.transportButton=button(f,"Transit",70,function() self:ToggleTransportPanel() end)
+    self.transportButton:SetPoint("RIGHT",self.layerButton,"LEFT",-6,0)
     self.layerButton:SetScript("OnEnter",function()
         GameTooltip:SetOwner(self.layerButton,"ANCHOR_BOTTOM")
         GameTooltip:SetText(self.focus and self.view.space~="world" and self.focus.name or "Map layers",.9,.94,.98)
@@ -240,7 +243,7 @@ function M:BuildUI()
     end)
     self.layerButton:SetScript("OnLeave",function() GameTooltip:Hide() end)
     local title=CreateFrame("Frame",nil,f)
-    title:SetPoint("TOPLEFT",f,"TOPLEFT",5,-3); title:SetPoint("BOTTOMRIGHT",self.layerButton,"BOTTOMLEFT",-4,-4)
+    title:SetPoint("TOPLEFT",f,"TOPLEFT",5,-3); title:SetPoint("BOTTOMRIGHT",self.transportButton,"BOTTOMLEFT",-4,-4)
     title:EnableMouse(true); title:RegisterForDrag("LeftButton")
     title:SetScript("OnDragStart",function() if not self.fullscreen then f:StartMoving() end end)
     title:SetScript("OnDragStop",function() f:StopMovingOrSizing(); self:SaveWindow() end)
@@ -299,7 +302,7 @@ function M:BuildUI()
     viewport:SetPoint("TOPLEFT",f,"TOPLEFT",10,-77)
     surface(viewport,.075,.12,.15); viewport:EnableMouse(true); viewport:EnableMouseWheel(true)
     self.layers={}
-    local layers={"overview","art","artFine","terrain","fine","detail","caves","interior","gather","markers"}
+    local layers={"overview","art","artFine","terrain","fine","detail","caves","interior","transitRoutes","gather","transit","markers"}
     for i,name in ipairs(layers) do
         local layer=CreateFrame("Frame",nil,viewport)
         layer:SetAllPoints(viewport); layer:SetFrameLevel(viewport:GetFrameLevel()+i)
@@ -307,6 +310,7 @@ function M:BuildUI()
     end
     self.playerMarker=self:MakeMarker(.35,1,.87,24)
     self:BuildGatherUI(self.gatherButton,button,text,surface)
+    self:BuildTransportUI(self.transportButton,button,text,surface)
     self.groupMarkers={}; self.pinMarkers={}
     for i=1,40 do self.groupMarkers[i]=self:MakeGroupMarker() end
     viewport:SetScript("OnMouseWheel",function()
@@ -352,6 +356,7 @@ function M:BuildUI()
     f:SetScript("OnHide",function()
         self:HideGroupTooltip()
         self:ClearGather();self.gatherPanel:Hide()
+        self.transportPanel:Hide();self:HideTransportTooltip()
         self.drag=nil; self.animation=nil; search:ClearFocus(); panel:Hide()
         self:SaveView(); self:SaveWindow()
     end)
@@ -429,6 +434,7 @@ function M:Initialize()
     if zMapDB.style~="painted" and zMapDB.style~="terrain" then zMapDB.style="hybrid" end
     if zMapDB.interiors~="surface" and zMapDB.interiors~="underground" then zMapDB.interiors="auto" end
     self:InitializeGather()
+    self:InitializeTransports()
     if type(zMapDB.pins)~="table" then zMapDB.pins={} end
     if zMapDB.layoutVersion~=self.data.layoutVersion then
         for _,pin in ipairs(zMapDB.pins) do
@@ -474,8 +480,9 @@ SlashCmdList["ZMAP"]=function(message)
             " | "..(M.gatherShareReceived or 0).." new shared locations this session.")
     elseif message=="nodes reset" then M:ResetGatherVisibility()
     elseif message=="nodes" then M:ToggleGatherPanel()
+    elseif message=="transit" then M:ToggleTransportPanel()
     elseif message=="help" then
-        M:Print("/zmap, /zmap nodes, /zmap nodes reset, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
+        M:Print("/zmap, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
     else M:Toggle() end
 end
 local events=CreateFrame("Frame")

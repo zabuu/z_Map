@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 — October 17, 2026
+
+- Added experimental Transit controls, actual berth/pier markers, arrival/departure estimates, hover details and a scrolling service list. Native client data covers 13 routes / 26 terminals; three uncached classic services are explicitly unconfirmed.
+- Added optional actual moving zeppelin/boat positions through the already installed ZepSense `ZepTransports()` reader. Scans run twice per second; out-of-range vehicles disappear instead of becoming predicted live positions. No DLL update or OctoBus changes.
+- Added seven measured schedule seeds, read-only OctoBus schedule integration, server-uptime restart estimates and local arrival/dwell/cycle learning. Unknown terminal offsets and unmeasured cycles stay unsynchronized. Every numeric countdown is marked as an estimate.
+- Added clipped, pooled route dots capped at 384. Wide views use schematic connections; close views follow native paths and omit teleport edges. Static routes are cached across timer refreshes.
+- Added 18 transport regressions; all 88 offline checks pass. Live server timing and client performance still require in-game validation. Restart WoW to discover the new transport glyphs.
+
 ## 1.3.3 — October 17, 2026
 
 - Added a thin gold circular rim only to locally detected resource markers.
