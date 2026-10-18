@@ -4,6 +4,7 @@ local ARROW="Interface\\Minimap\\MinimapArrow"
 local outdoor={466+2/3,400,333+1/3,266+2/3,200,133+1/3}
 local indoor={300,240,180,120,80,50}
 local layerNames={"overview","art","artFine","terrain","fine","detail","caves","interior","transitRoutes","gather","transit","questRoutes","quests","markers"}
+local strataOrder={BACKGROUND=1,LOW=2,MEDIUM=3,HIGH=4,DIALOG=5,FULLSCREEN=6,FULLSCREEN_DIALOG=7,TOOLTIP=8}
 local function angle(value) return type(value)=="number" and value==value and math.abs(value)<1000 end
 local function facing(model)
     if not model or not model.GetFacing then return end
@@ -91,15 +92,37 @@ function M:UseNativeMinimapPlayer(enabled)
     -- The native minimap model can render while IsShown() returns nil. Its
     -- existence, not that unreliable flag, decides whether to draw a copy.
     self.miniUsesNativeArrow=enabled and not rotated and arrow and arrow:GetAlpha()>0 or false
+    local level,strata
+    if enabled then
+        local ctx=self.miniContext
+        level=ctx.frame:GetFrameLevel();strata=ctx.frame:GetFrameStrata()
+        for _,name in ipairs(layerNames) do
+            local layer=ctx.layers[name];local layerStrata=layer:GetFrameStrata()
+            level=math.max(level,layer:GetFrameLevel())
+            if (strataOrder[layerStrata] or 0)>(strataOrder[strata] or 0) then strata=layerStrata end
+        end
+        -- Leave room for marker children, live-node rims and quest highlights.
+        -- Frame levels alone cannot put a native BACKGROUND model above LOW art.
+        level=level+4
+        if ctx.playerMarker:GetFrameStrata()~=strata then ctx.playerMarker:SetFrameStrata(strata) end
+        if ctx.playerMarker:GetFrameLevel()~=level then ctx.playerMarker:SetFrameLevel(level) end
+        if self.miniUsesNativeArrow then ctx.playerMarker:Hide() end
+    end
     if self.miniUsesNativeArrow then
-        local level=self.miniContext.layers.markers:GetFrameLevel()+1
         local current=arrow:GetFrameLevel()
+        local currentStrata=arrow:GetFrameStrata()
         if current~=self.nativeArrowAppliedLevel then self.nativeArrowLevel=current end
+        if currentStrata~=self.nativeArrowAppliedStrata then self.nativeArrowStrata=currentStrata end
+        if (strataOrder[currentStrata] or 0)>(strataOrder[strata] or 0) then strata=currentStrata end
+        if currentStrata~=strata then arrow:SetFrameStrata(strata) end
         if current~=level then arrow:SetFrameLevel(level) end
-        self.nativeArrowAppliedLevel=level
-    elseif self.nativeArrowLevel~=nil then
-        if arrow and arrow:GetFrameLevel()==self.nativeArrowAppliedLevel then arrow:SetFrameLevel(self.nativeArrowLevel) end
+        self.nativeArrowAppliedLevel=level;self.nativeArrowAppliedStrata=strata
+    else
+        local restoreLevel=arrow and self.nativeArrowLevel~=nil and arrow:GetFrameLevel()==self.nativeArrowAppliedLevel
+        if arrow and self.nativeArrowStrata and arrow:GetFrameStrata()==self.nativeArrowAppliedStrata then arrow:SetFrameStrata(self.nativeArrowStrata) end
+        if restoreLevel then arrow:SetFrameLevel(self.nativeArrowLevel) end
         self.nativeArrowLevel=nil;self.nativeArrowAppliedLevel=nil
+        self.nativeArrowStrata=nil;self.nativeArrowAppliedStrata=nil
     end
 end
 function M:UpdatePlayerArrow(texture)
@@ -268,6 +291,9 @@ function M:InitializeMinimap()
             local elapsed=miniElapsed;miniElapsed=0
             self:UpdateAtlasMinimap(elapsed);self:UpdatePFQuest(elapsed)
         end
+        -- Repair ordering after rendering/integration updates, even on frames
+        -- where the stationary atlas skips its slower texture/marker refresh.
+        if self.miniContext and self.miniContext.frame:IsShown() then self:UseNativeMinimapPlayer(true) end
     end)
 end
 function M:RefreshSettingsPanel()

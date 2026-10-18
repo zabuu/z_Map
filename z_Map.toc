@@ -2,7 +2,7 @@
 ## Title: |cff59d9c5z|rMap
 ## Notes: zSuite seamless OctoWoW atlas with painted maps and close-up terrain.
 ## Author: Samer / Zab
-## Version: 1.6.2
+## Version: 1.6.3
 ## DefaultState: enabled
 ## OptionalDeps: pfUI, pfQuest, pfQuest-turtle, Magnify, Cartographer, ShaguTweaks
 ## SavedVariables: zMapDB
