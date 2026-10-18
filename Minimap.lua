@@ -10,6 +10,21 @@ local function facing(model)
     local ok,value=pcall(model.GetFacing,model)
     if ok and angle(value) then return value end
 end
+function M:ReadMinimapCVar(name)
+    if type(GetCVar)~="function" or self.missingMinimapCVars and self.missingMinimapCVars[name] then return nil end
+    local ok,value=pcall(GetCVar,name)
+    if ok then return value end
+    self.missingMinimapCVars=self.missingMinimapCVars or {};self.missingMinimapCVars[name]=true
+    return nil
+end
+function M:MinimapRotated()
+    -- rotateMinimap was added after Vanilla. GetCVar raises on unknown names;
+    -- the stock 1.12 client must never be asked for this later-client setting.
+    if type(GetBuildInfo)~="function" then return false end
+    local _,_,_,interface=GetBuildInfo();interface=tonumber(interface)
+    if not interface or interface<=11200 then return false end
+    return self:ReadMinimapCVar("rotateMinimap")=="1"
+end
 function M:FindNativePlayerArrow()
     local now=GetTime and GetTime() or 0
     if not self.nativeArrow and Minimap and Minimap.GetChildren and now>=(self.arrowSearchAt or 0) then
@@ -47,7 +62,7 @@ function M:PlayerFacing()
         local ok,value=pcall(GetPlayerFacing)
         if ok and angle(value) then self.playerFacing=value;return value end
     end
-    local rotated=GetCVar and GetCVar("rotateMinimap")=="1"
+    local rotated=self:MinimapRotated()
     local value=rotated and facing(MiniMapCompassRing)
     if value then self.playerFacing=-value;return -value end
     value=facing(self:FindNativePlayerArrow())
@@ -55,7 +70,7 @@ function M:PlayerFacing()
     return self.playerFacing
 end
 function M:UseNativeMinimapPlayer(enabled)
-    local rotated=GetCVar and GetCVar("rotateMinimap")=="1"
+    local rotated=self:MinimapRotated()
     -- The ordinary 1.12 minimap is north up, like this atlas. Reuse its actual
     -- player model rather than drawing another arrow over a client model.
     self:SuppressNativePlayerArrow(enabled and rotated)
@@ -158,10 +173,8 @@ end
 function M:MinimapSpan()
     local zoom=self:MinimapZoom()
     local inside=IsIndoors and IsIndoors()
-    if GetCVar then
-        local a,b=tonumber(GetCVar("minimapInsideZoom")),tonumber(GetCVar("minimapZoom"))
-        if a and b and a~=b then inside=zoom==a end
-    end
+    local a,b=tonumber(self:ReadMinimapCVar("minimapInsideZoom")),tonumber(self:ReadMinimapCVar("minimapZoom"))
+    if a and b and a~=b then inside=zoom==a end
     return (inside and indoor or outdoor)[zoom+1]
 end
 function M:RaiseMinimapWidgets(enabled)

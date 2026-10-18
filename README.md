@@ -1,4 +1,4 @@
-# zMap 1.6.0
+# zMap 1.6.1
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -16,6 +16,7 @@ The map works without other addons or native extensions. Live gathering is optio
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
 
+Version 1.6.1 fixes the blank atlas minimap and repeated `Couldn't find CVar named 'rotateMinimap'` errors on the 1.12 client. Vanilla never queries that later-client setting. Missing minimap settings use safe defaults. `/reload` applies this fix if you have already restarted once for 1.6.0.
 
 Version 1.5.1 gives all zMap background messages one shared chat budget: **at most one packet every 15 seconds across gathering, transit and the uptime query**, with no catch-up bursts. Typing or sending normal chat pauses syncing for 30 seconds. A server chat-throttle notice pauses both senders for at least a minute and reduces their subsequent rate; repeated notices extend the pause. Pending work resumes gradually. Summaries are normally fifteen minutes apart, peer requests coalesce, and unchanged docked vehicles send only occasional heartbeats. Local detection, recordings and the animated map keep their normal cadence. Existing 1.5.0 peers remain compatible. Restart WoW to load the new modules and item textures.
 
@@ -115,6 +116,6 @@ After a client content update, rebuild the generated assets to pick up changed b
 
 ## Validation
 
-All 178 offline regressions pass, covering map/marker/cave rendering, gathering history and item art, node timing/LOD, transport schedules/motion/sharing, marker caching, headings, the combined chat budget, Follow, the optional minimap and pfQuest integration. The baseline uses a stock API stub without external addon dependencies. Integration tests load the installed pfQuest map and route modules and the installed pfUI chat wrapper. Tests include saved-state round trips, precise respawns and cave heights, native RGB and circular alpha, a 20,000-location history, duplicate suppression, delayed joins, malformed messages, throttling, failed-send backoff/retry, visibility recovery, sharing with the map closed, quest tooltips/clicks, route projection and independent viewports. The main map loads at most four textures per render; the miniature loads at most one, with independent caches. These checks do not measure live FPS, verify every minimap skin, or confirm delivery through OctoWoW's live channel service.
+All 181 offline regressions pass, covering map/marker/cave rendering, gathering history and item art, node timing/LOD, transport schedules/motion/sharing, marker caching, headings, the combined chat budget, Follow, the optional minimap and pfQuest integration. The baseline uses a stock API stub without external addon dependencies. Integration tests load the installed pfQuest map and route modules and the installed pfUI chat wrapper. Tests include saved-state round trips, precise respawns and cave heights, native RGB and circular alpha, a 20,000-location history, duplicate suppression, delayed joins, malformed messages, throttling, failed-send backoff/retry, visibility recovery, sharing with the map closed, quest tooltips/clicks, route projection and independent viewports. The main map loads at most four textures per render; the miniature loads at most one, with independent caches. These checks do not measure live FPS, verify every minimap skin, or confirm delivery through OctoWoW's live channel service.
 
 The maintenance scripts and offline preview PNGs referenced in SOURCE.md belong to the local atlas-generation workspace (`../_zMapMaintenance`) and are not part of this runtime addon repository. Generated map assets, the complete addon Lua source and artwork notices are included. No account settings, saved node history or client archives are included.
