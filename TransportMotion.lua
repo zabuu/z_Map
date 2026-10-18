@@ -136,7 +136,9 @@ function M:TransportPathPoint(route,legIndex,progress)
     for _,segment in ipairs(leg.segments) do
         if distance<=segment.to then
             local t=self.Clamp((distance-segment.from)/segment.length,0,1);local a,b=segment.a,segment.b
-            return {map=a[1],worldX=a[2]+(b[2]-a[2])*t,worldY=a[3]+(b[3]-a[3])*t,z=a[4]+(b[4]-a[4])*t}
+            -- Atlas axes are (-worldY, -worldX), with screen Y increasing down.
+            return {map=a[1],worldX=a[2]+(b[2]-a[2])*t,worldY=a[3]+(b[3]-a[3])*t,z=a[4]+(b[4]-a[4])*t,
+                headingX=a[3]-b[3],headingY=a[2]-b[2]}
         end
     end
 end
@@ -217,6 +219,9 @@ function M:TransportVehiclePose(route,now)
             (pose.x-previous.x)^2+(pose.y-previous.y)^2<600^2 then
             local t=self.Clamp((now-pose.at)/(pose.at-previous.at),0,1)
             display.x=previous.x+(pose.x-previous.x)*t;display.y=previous.y+(pose.y-previous.y)*t
+            if not pose.stop and previous.sender==pose.sender then
+                display.headingX=pose.x-previous.x;display.headingY=pose.y-previous.y
+            end
         end
         return display
     end

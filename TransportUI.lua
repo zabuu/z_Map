@@ -30,6 +30,24 @@ local function styleMarker(marker,kind,style,size,level)
         if not badge:IsShown() then badge:Show() end
     else hide(badge) end
 end
+local function faceVehicle(marker,kind,pose)
+    local x,y=1,0
+    if kind=="zeppelin" then
+        x,y=pose.headingX,pose.headingY
+        local length=x and y and math.sqrt(x*x+y*y) or 0
+        if length>.05 then x=x/length;y=y/length
+        else x=marker.zMapHeadingX or 1;y=marker.zMapHeadingY or 0 end
+    end
+    local icon=marker.icon
+    if marker.zMapHeadingIcon==icon and marker.zMapHeadingX and
+        (x-marker.zMapHeadingX)^2+(y-marker.zMapHeadingY)^2<.00000001 then return end
+    -- Stock 1.12 has no SetRotation. Rotate the east-facing sprite's UVs;
+    -- labels, hover bounds and the shared/estimated badge stay upright.
+    local c,s=x/2,y/2
+    icon:SetTexCoord(.5-c-s,.5+s-c, .5-c+s,.5+s+c,
+        .5+c-s,.5-s-c, .5+c+s,.5-s+c)
+    marker.zMapHeadingX=x;marker.zMapHeadingY=y;marker.zMapHeadingIcon=icon
+end
 local function clock(seconds)
     seconds=math.max(0,math.ceil(seconds));return string.format("%d:%02d",math.floor(seconds/60),math.mod(seconds,60))
 end
@@ -220,6 +238,7 @@ function M:RenderTransportVehicles()
             marker.vehicle=live;marker.stops=nil;hide(marker.label)
             local style=live.source=="estimated" and "estimated" or live.source=="shared" and "shared" or "local"
             styleMarker(marker,route.kind,style,25,level)
+            faceVehicle(marker,route.kind,live)
             self:PlaceMarker(marker,live.x,live.y,"world")
         elseif marker then hide(marker) end
     end end
