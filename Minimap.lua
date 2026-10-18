@@ -10,14 +10,7 @@ local function facing(model)
     local ok,value=pcall(model.GetFacing,model)
     if ok and angle(value) then return value end
 end
-function M:PlayerFacing()
-    if type(GetPlayerFacing)=="function" then
-        local ok,value=pcall(GetPlayerFacing)
-        if ok and angle(value) then self.playerFacing=value;return value end
-    end
-    local rotated=GetCVar and GetCVar("rotateMinimap")=="1"
-    local value=rotated and facing(MiniMapCompassRing)
-    if value then self.playerFacing=-value;return -value end
+function M:FindNativePlayerArrow()
     local now=GetTime and GetTime() or 0
     if not self.nativeArrow and Minimap and Minimap.GetChildren and now>=(self.arrowSearchAt or 0) then
         self.arrowSearchAt=now+2
@@ -28,7 +21,30 @@ function M:PlayerFacing()
             end
         end
     end
-    value=facing(self.nativeArrow)
+    return self.nativeArrow
+end
+function M:SuppressNativePlayerArrow(enabled)
+    local arrow=enabled and self:FindNativePlayerArrow() or self.nativeArrow
+    if not arrow or not arrow.GetAlpha or not arrow.SetAlpha then return end
+    if enabled then
+        local alpha=arrow:GetAlpha()
+        if alpha~=0 then
+            self.nativeArrowAlpha=alpha;arrow:SetAlpha(0)
+        elseif self.nativeArrowAlpha==nil then self.nativeArrowAlpha=0 end
+    elseif self.nativeArrowAlpha~=nil then
+        if arrow:GetAlpha()==0 then arrow:SetAlpha(self.nativeArrowAlpha) end
+        self.nativeArrowAlpha=nil
+    end
+end
+function M:PlayerFacing()
+    if type(GetPlayerFacing)=="function" then
+        local ok,value=pcall(GetPlayerFacing)
+        if ok and angle(value) then self.playerFacing=value;return value end
+    end
+    local rotated=GetCVar and GetCVar("rotateMinimap")=="1"
+    local value=rotated and facing(MiniMapCompassRing)
+    if value then self.playerFacing=-value;return -value end
+    value=facing(self:FindNativePlayerArrow())
     if value then self.playerFacing=value end
     return self.playerFacing
 end
@@ -84,7 +100,10 @@ function M:CreateMinimapContext()
     for _,name in ipairs({"OnMouseDown","OnMouseUp","OnMouseWheel"}) do
         local script=name;frame:SetScript(script,function() forward(script) end)
     end
-    frame:SetScript("OnHide",function() ctx:HideGatherTooltip();ctx:HideGroupTooltip();ctx:HideTransportTooltip() end)
+    frame:SetScript("OnHide",function()
+        ctx:HideGatherTooltip();ctx:HideGroupTooltip();ctx:HideTransportTooltip()
+        M:SuppressNativePlayerArrow(false);M:RaiseMinimapWidgets(false)
+    end)
     frame:Hide();self.miniContext=ctx;return ctx
 end
 function M:RenderMinimapMarkers(ctx)
@@ -107,8 +126,11 @@ function M:RenderMinimapMarkers(ctx)
     end
     for i=table.getn(zMapDB.pins)+1,table.getn(ctx.pinMarkers) do ctx.pinMarkers[i]:Hide() end
 end
+function M:MinimapZoom()
+    return Minimap.GetZoom and self.Clamp(Minimap:GetZoom(),0,5) or 0
+end
 function M:MinimapSpan()
-    local zoom=Minimap.GetZoom and self.Clamp(Minimap:GetZoom(),0,5) or 0
+    local zoom=self:MinimapZoom()
     local inside=IsIndoors and IsIndoors()
     if GetCVar then
         local a,b=tonumber(GetCVar("minimapInsideZoom")),tonumber(GetCVar("minimapZoom"))
@@ -133,6 +155,7 @@ function M:RaiseMinimapWidgets(enabled)
 end
 function M:HideAtlasMinimap()
     if self.miniContext and self.miniContext.frame:IsShown() then self.miniContext.frame:Hide() end
+    self:SuppressNativePlayerArrow(false)
     self:RaiseMinimapWidgets(false)
 end
 function M:SetAtlasMinimap(enabled)
@@ -156,9 +179,12 @@ function M:UpdateAtlasMinimap(elapsed)
     local style=zMapDB.minimapStyle=="match" and zMapDB.style or zMapDB.minimapStyle
     local changed=v.x~=p.x or v.y~=p.y or v.space~=p.space or v.width~=w or v.height~=h or v.scale~=scale or ctx.style~=style or ctx.focus~=p.zone or ctx.interiorMode~=zMapDB.interiors
     v.x=p.x;v.y=p.y;v.space=p.space;v.width=w;v.height=h;v.scale=scale
+    ctx.gatherIconScale=.65+.35*self:MinimapZoom()/5
     ctx.player=p;ctx.group=self.group;ctx.gatherNodes=self.gatherNodes;ctx.focus=p.zone or false;ctx.style=style;ctx.interiorMode=zMapDB.interiors
     if ctx.frame:GetWidth()~=w then ctx.frame:SetWidth(w) end;if ctx.frame:GetHeight()~=h then ctx.frame:SetHeight(h) end
     if not ctx.frame:IsShown() then ctx.frame:Show();changed=true end
+    -- Keep the native model running for its facing, but draw only our arrow.
+    self:SuppressNativePlayerArrow(true)
     self:RaiseMinimapWidgets(true)
     if not large then self:UpdateGather(elapsed) end
     if changed or ctx.pending then ctx:Render() else self:RenderMinimapMarkers(ctx) end

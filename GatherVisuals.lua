@@ -9,7 +9,7 @@ function M:GatherPresentation()
     local alpha=1-self.Clamp((span-12500)/5500,0,1)
     local t=self.Clamp(math.log(4500/span)/math.log(5),0,1)
     local size=3+14*t*t*(3-2*t)
-    return size,alpha,size<=4.5
+    return size*(self.gatherIconScale or 1),alpha,size<=4.5
 end
 function M:BuildGatherVisuals(marker)
     marker.rim=marker:CreateTexture(nil,"BACKGROUND");marker.rim:SetPoint("CENTER",marker,"CENTER",0,0)
