@@ -25,6 +25,7 @@ function M:GatherRecordHash(record) return hash(self:GatherWireRecord(record)) e
 function M:GatherSharingStatus()
     if not zMapDB.gatherSharing then return "off" end
     if not self.gatherLog then return "log unavailable" end
+    local pause=self:SyncPauseStatus();if pause then return pause end
     if self.gatherShareError then return "send failed; retrying" end
     if self.gatherShareWorld and channelID() then return "connected" end
     return "waiting to connect"
@@ -66,6 +67,7 @@ function M:SetGatherSharing(enabled)
     zMapDB.gatherSharing=enabled
     self.gatherShareQueue={};self.gatherShareQueued={};self.gatherShareSweep=nil
     self.gatherShareSweepAgain=nil;self.gatherHiddenChannel=nil;self.gatherShareError=nil
+    self:SyncIdle("gather")
     if not enabled then
         if LeaveChannelByName then LeaveChannelByName(CHANNEL) end
     else
@@ -80,7 +82,7 @@ end
 function M:StartGatherShareSweep()
     -- Concurrent requests coalesce, and hearing a location suppresses duplicate
     -- broadcasts from the other peers responding to that request.
-    if self.gatherShareSweep then self.gatherShareSweepAgain=true;return end
+    if self.gatherShareSweep then return end
     self.gatherShareSweep={cursor=1,last=table.getn(self.gatherLogNodes),since=self.gatherShareClock}
     local name=UnitName("player") or ""
     self.gatherShareNext=math.max(self.gatherShareNext,self.gatherShareClock+.3+math.mod(hash(name),170)/100)
@@ -107,17 +109,18 @@ function M:TakeGatherShareRecord()
         if node and (self.gatherShareHeard[node.id] or -1)<sweep.since then return node end
     end
 end
-function M:SendGatherShare(message,id)
-    local ok=pcall(SendChatMessage,message,"CHANNEL",nil,id)
+function M:SendGatherShare(message,id,retry)
+    local ok=self:SendSyncMessage("gather",message,"CHANNEL",id,retry)
+    if ok==nil then return end
     self.gatherShareError=not ok
     if ok then self.gatherShareSent=self.gatherShareSent+1 end
-    self.gatherShareNext=self.gatherShareClock+(ok and 1 or 30)
+    self.gatherShareNext=self.gatherShareClock+(ok and .25 or 30)
     return ok
 end
 function M:UpdateGatherSync(elapsed)
     self.gatherShareClock=self.gatherShareClock+elapsed
     self.gatherShareTokens=math.min(64,self.gatherShareTokens+elapsed*16)
-    if not zMapDB.gatherSharing or not self.gatherShareWorld or not self.gatherLog or not SendChatMessage then return end
+    if not zMapDB.gatherSharing or not self.gatherShareWorld or not self.gatherLog or not SendChatMessage then self:SyncIdle("gather");return end
     local now=self.gatherShareClock
     if now<self.gatherShareNext then return end
     local id=channelID()
@@ -128,10 +131,12 @@ function M:UpdateGatherSync(elapsed)
         self.gatherShareNext=now+1;return
     end
     if self.gatherHiddenChannel~=id then self:HideGatherChannel();self.gatherHiddenChannel=id end
+    if now<self.gatherShareHello and table.getn(self.gatherShareQueue)==0 and not self.gatherShareSweep then self:SyncIdle("gather");return end
+    if not self:CanSyncSend("gather") then return end
     if now>=self.gatherShareHello then
         local message=HEADER.."H:"..table.getn(self.gatherLogNodes)..":"..(self.gatherLogChecksum or 0)
-        local ok=self:SendGatherShare(message,id)
-        self.gatherShareHello=now+(ok and 180 or 30);return
+        local ok=self:SendGatherShare(message,id,function() self.gatherShareHello=0 end)
+        self.gatherShareHello=now+(ok and 900 or 30);return
     end
     local records={};local nodes={};local packed={};local length=string.len(HEADER)+2
     for i=1,3 do
@@ -143,8 +148,10 @@ function M:UpdateGatherSync(elapsed)
             packed[node.id]=true;table.insert(records,wire);table.insert(nodes,node);length=length+string.len(wire)+1
         end
     end
-    if table.getn(records)==0 then self.gatherShareNext=now+.25;return end
-    local ok=self:SendGatherShare(HEADER.."D:"..table.concat(records,";"),id)
+    if table.getn(records)==0 then self.gatherShareNext=now+.25;self:SyncIdle("gather");return end
+    local ok=self:SendGatherShare(HEADER.."D:"..table.concat(records,";"),id,function()
+        for _,node in ipairs(nodes) do self.gatherShareHeard[node.id]=nil;self:QueueGatherShare(node) end
+    end)
     if ok then
         for _,node in ipairs(nodes) do self.gatherShareHeard[node.id]=now end
     else for _,node in ipairs(nodes) do self:QueueGatherShare(node) end end
@@ -174,13 +181,17 @@ function M:ReceiveGatherShare(message,sender,channel)
         count=tonumber(count);sum=tonumber(sum)
         if not count or count>20000 or not sum or sum>=2147483647 then return end
         if count~=table.getn(self.gatherLogNodes) or sum~=(self.gatherLogChecksum or 0) then
-            -- One response per peer per minute, even if a peer repeats requests.
-            if not peer.hello or now-peer.hello>=60 then
+            -- Coalesce requests and exchange one reciprocal summary per peer.
+            -- A reply must not provoke another full-log/hello reply loop.
+            if not peer.hello or now-peer.hello>=900 then
                 peer.hello=now;self:StartGatherShareSweep()
                 -- Reply with our summary too: the joining peer may own records
                 -- we lack. The per-peer cooldown prevents a hello/reply loop.
-                local delay=2+math.mod(hash(UnitName("player") or ""),200)/100
-                self.gatherShareHello=math.min(self.gatherShareHello,now+delay)
+                if not peer.replied then
+                    peer.replied=true
+                    local delay=15+math.mod(hash(UnitName("player") or ""),500)/100
+                    self.gatherShareHello=math.min(self.gatherShareHello,now+delay)
+                end
             end
         end
         return

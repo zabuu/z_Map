@@ -15,8 +15,9 @@ end
 function M:ResetTransportSyncSession()
     local now=self:TransportNow()
     self.transportShareNext=now+3;self.transportShareJoin=now+5;self.transportShareHello=0
-    self.transportShareLocalSent={};self.transportShareAnchorSent={};self.transportShareHeard={}
+    self.transportShareLocalSent={};self.transportShareLastPose={};self.transportShareAnchorSent={};self.transportShareHeard={}
     self.transportShareSweep=nil;self.transportShareSweepAt=nil;self.transportShareError=nil
+    self:SyncIdle("transport")
 end
 function M:HideTransportChannel()
     if ChatFrame_RemoveChannel and getglobal then
@@ -34,6 +35,7 @@ end
 function M:TransportSharingStatus()
     if not zMapDB.transportSharing then return "off" end
     if not zMapDB.transportsEnabled then return "paused" end
+    local pause=self:SyncPauseStatus();if pause then return pause end
     if self.transportShareError then return "retrying" end
     if not self.transportClockReady then return "waiting for uptime" end
     return channelID() and "connected" or "waiting to connect"
@@ -43,7 +45,7 @@ function M:TransportUptime()
 end
 function M:StartTransportModelSweep()
     local now=self:TransportNow()
-    if self.transportShareSweep or self.transportShareSweepAt and now-self.transportShareSweepAt<60 then return end
+    if self.transportShareSweep or self.transportShareSweepAt and now-self.transportShareSweepAt<900 then return end
     self.transportShareSweep={route=1,leg=1,bin=1};self.transportShareSweepAt=now
     self.transportShareAnchorSent={}
 end
@@ -71,8 +73,11 @@ function M:BuildTransportSightPacket(up)
     local candidates={};local now=self:TransportNow();local name=UnitName("player") or ""
     for _,route in ipairs(self.transportRoutes) do
         local pose=self.transportLive[route.entry];local heard=self.transportShareHeard[route.entry]
-        if pose and now-pose.at<=1.5 and now-(self.transportShareLocalSent[route.entry] or 0)>=2 and
-            not (heard and now-heard.at<4 and heard.sender<name) then table.insert(candidates,pose) end
+        local last=self.transportShareLastPose[route.entry]
+        local changed=pose and (not last or pose.map~=last.map or pose.stop~=last.stop or
+            (pose.worldX-last.worldX)^2+(pose.worldY-last.worldY)^2>40^2 or math.abs(pose.z-last.z)>10)
+        if pose and now-pose.at<=1.5 and now-(self.transportShareLocalSent[route.entry] or 0)>=15 and
+            (changed or now-last.at>=90) and not (heard and now-heard.at<120 and heard.sender<name) then table.insert(candidates,pose) end
     end
     table.sort(candidates,function(a,b)
         local x,y=self.transportShareLocalSent[a.route.entry] or 0,self.transportShareLocalSent[b.route.entry] or 0
@@ -114,10 +119,11 @@ end
 function M:UpdateTransportSync(elapsed)
     self.transportShareTokens=math.min(64,self.transportShareTokens+elapsed*16)
     if not zMapDB.transportSharing or not zMapDB.transportsEnabled then
+        self:SyncIdle("transport")
         if self.transportShareJoined and LeaveChannelByName then pcall(LeaveChannelByName,CHANNEL);self.transportShareJoined=nil end
         return
     end
-    if not self.transportWorld or not SendChatMessage then return end
+    if not self.transportWorld or not SendChatMessage then self:SyncIdle("transport");return end
     local now=self:TransportNow();if now<self.transportShareNext then return end
     local id=channelID()
     if not id then
@@ -128,6 +134,7 @@ function M:UpdateTransportSync(elapsed)
     end
     if self.transportShareJoined~=id then self:HideTransportChannel();self.transportShareJoined=id end
     local up=self:TransportUptime();if not up or up<0 or up>31536000 then return end
+    if not self:CanSyncSend("transport") then return end
     local message,kind,marks
     if now>=self.transportShareHello then message=string.format("ZMT1:H:%.2f",up);kind="hello"
     else
@@ -135,15 +142,25 @@ function M:UpdateTransportSync(elapsed)
         if not message then message,marks=self:BuildTransportSightPacket(up);kind="sight" end
         if not message then message,marks=self:BuildTransportModelPacket(up);kind="model" end
     end
-    if not message then self.transportShareNext=now+.25;return end
+    if not message then self.transportShareNext=now+.25;self:SyncIdle("transport");return end
     if string.len(message)>230 then self.transportShareNext=now+1;return end
-    local ok=pcall(SendChatMessage,message,"CHANNEL",nil,id)
-    self.transportShareError=not ok;self.transportShareNext=now+(ok and 1 or 30)
+    local cursor=self.transportShareSweep
+    local ok=self:SendSyncMessage("transport",message,"CHANNEL",id,function()
+        if kind=="hello" then self.transportShareHello=0
+        elseif kind=="anchor" then for k,v in pairs(marks) do if self.transportShareAnchorSent[k]==v then self.transportShareAnchorSent[k]=nil end end
+        elseif kind=="sight" then for _,entry in ipairs(marks) do self.transportShareLocalSent[entry]=nil;self.transportShareLastPose[entry]=nil end
+        elseif kind=="model" and zMapDB.transportSharing then self.transportShareSweep=cursor end
+    end)
+    if ok==nil then return end
+    self.transportShareError=not ok;self.transportShareNext=now+(ok and .25 or 30)
     if not ok then return end
     self.transportShareSent=self.transportShareSent+1
-    if kind=="hello" then self.transportShareHello=now+180
+    if kind=="hello" then self.transportShareHello=now+900
     elseif kind=="anchor" then for k,v in pairs(marks) do self.transportShareAnchorSent[k]=v end
-    elseif kind=="sight" then for _,entry in ipairs(marks) do self.transportShareLocalSent[entry]=now end
+    elseif kind=="sight" then for _,entry in ipairs(marks) do
+        self.transportShareLocalSent[entry]=now;local p=self.transportLive[entry]
+        self.transportShareLastPose[entry]={map=p.map,worldX=p.worldX,worldY=p.worldY,z=p.z,stop=p.stop,at=now}
+    end
     elseif kind=="model" then self.transportShareSweep=marks end
 end
 function M:ReceiveTransportShare(message,sender,channel)
@@ -168,11 +185,11 @@ function M:ReceiveTransportShare(message,sender,channel)
     peer.tokens=peer.tokens-1;self.transportShareTokens=self.transportShareTokens-1
     local delay=math.max(0,up-wireUp);local accepted=false
     if kind=="H" then
-        if not peer.hello or now-peer.hello>=60 then
+        if not peer.hello or now-peer.hello>=900 then
             peer.hello=now;self:StartTransportModelSweep()
             -- A late joiner may own recordings we do not have. Request them too;
             -- the per-peer cooldown prevents hello/reply loops.
-            self.transportShareHello=math.min(self.transportShareHello,now+2)
+            if not peer.replied then peer.replied=true;self.transportShareHello=math.min(self.transportShareHello,now+15) end
         end
         return
     end

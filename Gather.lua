@@ -49,7 +49,7 @@ function M:GatherEnabled(info)
     return info and zMapDB.gatherCategories[info.category]~=false and zMapDB.gatherFilters[info.key]~=false
 end
 function M:SampleGather()
-    if not self.frame or not self.frame:IsShown() then return end
+    if not self:IsGatherVisible() then return end
     if not zMapDB.gatherEnabled then self:ClearGather("Live gathering is off");return end
     if type(zAPI)~="function" then self:ClearGather("Live nodes require zAPI 2.4");return end
     if self.gatherProbedAPI~=zAPI then
@@ -189,8 +189,8 @@ function M:RenderGatherMarkers()
     -- Native observations have priority over history when the display is full.
     for _,node in ipairs(self.gatherNodes) do
         local location=node.location
-        if not location or location.renderEpoch~=epoch then
-            if location then location.renderEpoch=epoch end
+        if not location or location.renderOwner~=self or location.renderEpoch~=epoch then
+            if location then location.renderOwner=self;location.renderEpoch=epoch end
             draw(node,true)
         end
     end

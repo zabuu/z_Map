@@ -268,10 +268,10 @@ function M:UpdateTransports(elapsed)
     if not self.transportWorld then return end
     local now=self:TransportNow()
     if self.transportQueryAt and now>=self.transportQueryAt then
-        self.transportQueryAt=nil
         if zMapDB.transportsEnabled and not self.transportUptimeConfirmed and type(SendChatMessage)=="function" then
-            pcall(SendChatMessage,".server info","SAY")
-        end
+            local ok=self:SendSyncMessage("uptime",".server info","SAY",nil,function() self.transportQueryAt=self:TransportNow() end)
+            if ok then self.transportQueryAt=nil elseif ok==false then self.transportQueryAt=now+30 end
+        else self.transportQueryAt=nil;self:SyncIdle("uptime") end
     end
     self.transportPollElapsed=self.transportPollElapsed+elapsed
     if self.transportPollElapsed>=.5 then

@@ -39,7 +39,10 @@ function M:StyleGatherMarker(marker,node,live,size,alpha,dot)
     end
     if marker.visualAlpha~=alpha then marker:SetAlpha(alpha);marker.visualAlpha=alpha end
     local paths=live and zMapGatherData.icons or zMapGatherData.loggedIcons
-    local path=dot and "Interface\\AddOns\\z_Map\\Media\\GroupCircle" or paths[node.definition.category]
+    local entry=node.entry or node.record and node.record.entry
+    local item=zMapGatherData.itemIcons and zMapGatherData.itemIcons[entry]
+    local path=dot and "Interface\\AddOns\\z_Map\\Media\\GroupCircle" or
+        item and (live and item.live or item.logged) or paths[node.definition.category]
     if marker.path~=path then marker.texture:SetTexture(path);marker.path=path end
     local color=dot and (live and dotColors[node.definition.category] or grayDot)
     local r,g,b=1,1,1

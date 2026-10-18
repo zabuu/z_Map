@@ -1,0 +1,214 @@
+-- Independent atlas viewport: never swap the main map's view, pools or focus.
+local M=zMap
+local ARROW="Interface\\Minimap\\MinimapArrow"
+local outdoor={466+2/3,400,333+1/3,266+2/3,200,133+1/3}
+local indoor={300,240,180,120,80,50}
+local layerNames={"overview","art","artFine","terrain","fine","detail","caves","interior","transitRoutes","gather","transit","markers"}
+local function angle(value) return type(value)=="number" and value==value and math.abs(value)<1000 end
+local function facing(model)
+    if not model or not model.GetFacing then return end
+    local ok,value=pcall(model.GetFacing,model)
+    if ok and angle(value) then return value end
+end
+function M:PlayerFacing()
+    if type(GetPlayerFacing)=="function" then
+        local ok,value=pcall(GetPlayerFacing)
+        if ok and angle(value) then self.playerFacing=value;return value end
+    end
+    local rotated=GetCVar and GetCVar("rotateMinimap")=="1"
+    local value=rotated and facing(MiniMapCompassRing)
+    if value then self.playerFacing=-value;return -value end
+    local now=GetTime and GetTime() or 0
+    if not self.nativeArrow and Minimap and Minimap.GetChildren and now>=(self.arrowSearchAt or 0) then
+        self.arrowSearchAt=now+2
+        for _,child in ipairs({Minimap:GetChildren()}) do
+            if child.IsObjectType and child:IsObjectType("Model") and child.GetModel then
+                local model=child:GetModel()
+                if type(model)=="string" and string.find(string.lower(model),"minimaparrow",1,true) then self.nativeArrow=child;break end
+            end
+        end
+    end
+    value=facing(self.nativeArrow)
+    if value then self.playerFacing=value end
+    return self.playerFacing
+end
+function M:UpdatePlayerArrow(texture)
+    if not texture then return end
+    local value=M:PlayerFacing() or 0
+    if texture.zMapFacing==value then return end
+    -- Facing is radians counterclockwise from north; the native texture points up.
+    local c,s=math.cos(value)/2,-math.sin(value)/2
+    texture:SetTexCoord(.5-c-s,.5+s-c, .5-c+s,.5+s+c,
+        .5+c-s,.5-s-c, .5+c+s,.5-s+c)
+    texture.zMapFacing=value
+end
+function M:IsGatherVisible()
+    return self.frame and self.frame:IsShown() or
+        zMapDB.minimapOverride and self.miniContext and self.miniContext.frame:IsShown()
+end
+local function hideTooltip(self,key,cache,marker)
+    local current=rawget(self,key)
+    if current and (not marker or current==marker) then self[key]=false;if cache then self[cache]=false end;GameTooltip:Hide() end
+end
+local function forward(script)
+    local handler=Minimap and Minimap:GetScript(script)
+    if handler then
+        local previous=this;this=Minimap
+        local ok,err=pcall(handler);this=previous
+        if not ok then error(err) end
+    elseif script=="OnMouseWheel" and Minimap and Minimap.SetZoom then
+        Minimap:SetZoom(M.Clamp(Minimap:GetZoom()+(arg1>0 and 1 or -1),0,5))
+    end
+end
+function M:CreateMinimapContext()
+    local frame=CreateFrame("Frame",nil,Minimap);frame:SetAllPoints(Minimap)
+    frame:SetFrameLevel(Minimap:GetFrameLevel()+1)
+    frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"});frame:SetBackdropColor(.075,.12,.15,1)
+    local ctx=setmetatable({frame=frame,viewport=frame,view={x=0,y=0,width=140,height=140,scale=1,space="world"},
+        layers={},pools={},grids=self.grids,gridSeen={},stats={},serial=0,loadLimit=1,focus=false,
+        groupMarkers={},pinMarkers={},gatherMarkers={},gatherMarkerFree={},gatherRenderEpoch=0,
+        hoveredGather=false,gatherTooltipMarker=false,hoveredGroupMarker=false,groupTooltipMarker=false,hoveredTransport=false,
+        transportDockMarkers={},transportVehicleMarkers={},transportVehicleByEntry={},transportRouteDots={},transportRouteView=false},
+        {__index=M})
+    ctx.UpdateLayerButton=function() end;ctx.UpdateGatherStatus=function() end
+    ctx.HideGatherTooltip=function(self,marker) hideTooltip(self,"hoveredGather","gatherTooltipMarker",marker) end
+    ctx.HideGroupTooltip=function(self,marker) hideTooltip(self,"hoveredGroupMarker","groupTooltipMarker",marker) end
+    ctx.HideTransportTooltip=function(self,marker) hideTooltip(self,"hoveredTransport",nil,marker) end
+    ctx.RenderMarkers=function(self) M:RenderMinimapMarkers(self) end
+    for i,name in ipairs(layerNames) do
+        local layer=CreateFrame("Frame",nil,frame);layer:SetAllPoints(frame)
+        layer:SetFrameLevel(frame:GetFrameLevel()+i);ctx.layers[name]=layer
+    end
+    ctx.playerMarker=ctx:MakeMarker(1,1,1,22)
+    ctx.playerMarker.texture:SetTexture(ARROW);ctx.playerMarker.texture:SetTexCoord(0,1,0,1)
+    for _,name in ipairs({"OnMouseDown","OnMouseUp","OnMouseWheel"}) do
+        local script=name;frame:SetScript(script,function() forward(script) end)
+    end
+    frame:SetScript("OnHide",function() ctx:HideGatherTooltip();ctx:HideGroupTooltip();ctx:HideTransportTooltip() end)
+    frame:Hide();self.miniContext=ctx;return ctx
+end
+function M:RenderMinimapMarkers(ctx)
+    ctx:RenderGatherMarkers();ctx:RenderTransports()
+    local p=ctx.player
+    if p then ctx:PlaceMarker(ctx.playerMarker,p.x,p.y,p.space);self:UpdatePlayerArrow(ctx.playerMarker.texture) end
+    local used=0
+    for i,member in ipairs(self.group or {}) do
+        local marker=ctx.groupMarkers[i]
+        if not marker then marker=ctx:MakeGroupMarker();ctx.groupMarkers[i]=marker end
+        marker.member=member;local r,g,b=self:ClassColor(member.class)
+        if marker.r~=r or marker.g~=g or marker.b~=b then marker.texture:SetVertexColor(r,g,b);marker.r=r;marker.g=g;marker.b=b end
+        ctx:PlaceMarker(marker,member.x,member.y,member.space);used=i
+    end
+    for i=used+1,table.getn(ctx.groupMarkers) do ctx.groupMarkers[i]:Hide() end
+    for i,pin in ipairs(zMapDB.pins) do
+        local marker=ctx.pinMarkers[i]
+        if not marker then marker=ctx:MakeMarker(1,.75,.22,10);ctx.pinMarkers[i]=marker end
+        ctx:PlaceMarker(marker,pin.x,pin.y,pin.space)
+    end
+    for i=table.getn(zMapDB.pins)+1,table.getn(ctx.pinMarkers) do ctx.pinMarkers[i]:Hide() end
+end
+function M:MinimapSpan()
+    local zoom=Minimap.GetZoom and self.Clamp(Minimap:GetZoom(),0,5) or 0
+    local inside=IsIndoors and IsIndoors()
+    if GetCVar then
+        local a,b=tonumber(GetCVar("minimapInsideZoom")),tonumber(GetCVar("minimapZoom"))
+        if a and b and a~=b then inside=zoom==a end
+    end
+    return (inside and indoor or outdoor)[zoom+1]
+end
+function M:RaiseMinimapWidgets(enabled)
+    if enabled and self.miniWidgetLevels then return end
+    if enabled then
+        self.miniWidgetLevels={};local level=self.miniContext.layers.markers:GetFrameLevel()+3
+        for _,name in ipairs({"MinimapZoomIn","MinimapZoomOut","MinimapToggleButton","MiniMapTrackingFrame","MiniMapMailFrame","MiniMapBattlefieldFrame","MiniMapPing","GameTimeFrame"}) do
+            local widget=getglobal and getglobal(name)
+            if widget and widget.GetFrameLevel and widget.SetFrameLevel then
+                table.insert(self.miniWidgetLevels,{widget,widget:GetFrameLevel(),level});widget:SetFrameLevel(level)
+            end
+        end
+    elseif self.miniWidgetLevels then
+        for _,item in ipairs(self.miniWidgetLevels) do if item[1]:GetFrameLevel()==item[3] then item[1]:SetFrameLevel(item[2]) end end
+        self.miniWidgetLevels=nil
+    end
+end
+function M:HideAtlasMinimap()
+    if self.miniContext and self.miniContext.frame:IsShown() then self.miniContext.frame:Hide() end
+    self:RaiseMinimapWidgets(false)
+end
+function M:SetAtlasMinimap(enabled)
+    zMapDB.minimapOverride=enabled==true
+    if not enabled then self:HideAtlasMinimap();if not self.frame or not self.frame:IsShown() then self:ClearGather() end end
+    self.miniRenderKey=nil;self:RefreshSettingsPanel()
+end
+function M:UpdateAtlasMinimap(elapsed)
+    if not zMapDB.minimapOverride or not self.miniWorld or not Minimap or
+        not Minimap:IsShown() or Minimap.IsVisible and not Minimap:IsVisible() or WorldMapFrame and WorldMapFrame:IsShown() then
+        self:HideAtlasMinimap();return
+    end
+    local large=self.frame and self.frame:IsShown()
+    if not large then self:SamplePlayer() end
+    local p=self.player
+    if not p then self:HideAtlasMinimap();return end
+    local ctx=self.miniContext or self:CreateMinimapContext();local v=ctx.view
+    local w,h=Minimap:GetWidth(),Minimap:GetHeight()
+    if w<30 or h<30 then self:HideAtlasMinimap();return end
+    local scale=math.min(w,h)/self:MinimapSpan()
+    local style=zMapDB.minimapStyle=="match" and zMapDB.style or zMapDB.minimapStyle
+    local changed=v.x~=p.x or v.y~=p.y or v.space~=p.space or v.width~=w or v.height~=h or v.scale~=scale or ctx.style~=style or ctx.focus~=p.zone or ctx.interiorMode~=zMapDB.interiors
+    v.x=p.x;v.y=p.y;v.space=p.space;v.width=w;v.height=h;v.scale=scale
+    ctx.player=p;ctx.group=self.group;ctx.gatherNodes=self.gatherNodes;ctx.focus=p.zone or false;ctx.style=style;ctx.interiorMode=zMapDB.interiors
+    if ctx.frame:GetWidth()~=w then ctx.frame:SetWidth(w) end;if ctx.frame:GetHeight()~=h then ctx.frame:SetHeight(h) end
+    if not ctx.frame:IsShown() then ctx.frame:Show();changed=true end
+    self:RaiseMinimapWidgets(true)
+    if not large then self:UpdateGather(elapsed) end
+    if changed or ctx.pending then ctx:Render() else self:RenderMinimapMarkers(ctx) end
+    ctx:UpdateGatherVisuals(elapsed)
+end
+function M:InitializeMinimap()
+    zMapDB.minimapOverride=zMapDB.minimapOverride==true
+    if zMapDB.minimapStyle~="terrain" and zMapDB.minimapStyle~="painted" then zMapDB.minimapStyle="match" end
+    self.miniWorld=false
+    local driver=CreateFrame("Frame");self.minimapDriver=driver
+    driver:RegisterEvent("PLAYER_ENTERING_WORLD");driver:RegisterEvent("PLAYER_LEAVING_WORLD")
+    driver:SetScript("OnEvent",function()
+        self.miniWorld=event=="PLAYER_ENTERING_WORLD"
+        if not self.miniWorld then self:HideAtlasMinimap() end
+    end)
+    local arrowElapsed,miniElapsed=0,0
+    driver:SetScript("OnUpdate",function()
+        if not self.ready then return end
+        local dt=arg1 or 0;arrowElapsed=arrowElapsed+dt;miniElapsed=miniElapsed+dt
+        if arrowElapsed>=.05 then
+            arrowElapsed=0
+            if self.frame and self.frame:IsShown() then self:UpdatePlayerArrow(self.playerMarker and self.playerMarker.texture) end
+            if self.miniContext and self.miniContext.frame:IsShown() then self:UpdatePlayerArrow(self.miniContext.playerMarker.texture) end
+        end
+        if miniElapsed>=.1 then local elapsed=miniElapsed;miniElapsed=0;self:UpdateAtlasMinimap(elapsed) end
+    end)
+end
+function M:RefreshSettingsPanel()
+    if not self.settingsPanel then return end
+    self.minimapOption.label:SetText(zMapDB.minimapOverride and "Minimap: zMap" or "Minimap: Blizzard")
+    self.minimapLookOption.label:SetText("Look: "..(zMapDB.minimapStyle=="match" and "same as map" or zMapDB.minimapStyle))
+end
+function M:BuildSettingsUI(button,text,surface)
+    local panel=CreateFrame("Frame",nil,self.frame);self.settingsPanel=panel
+    panel:SetWidth(340);panel:SetHeight(204);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
+    panel:SetFrameLevel(self.frame:GetFrameLevel()+50);panel:EnableMouse(true);surface(panel)
+    text(panel,"Map settings",12,-12,270,true)
+    local close=button(panel,"X",24,function() panel:Hide() end);close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-8,-8)
+    self.minimapOption=button(panel,"",150,function() self:SetAtlasMinimap(not zMapDB.minimapOverride) end)
+    self.minimapOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-42)
+    self.minimapLookOption=button(panel,"",150,function()
+        local nextLook={match="terrain",terrain="painted",painted="match"};zMapDB.minimapStyle=nextLook[zMapDB.minimapStyle]
+        self:RefreshSettingsPanel()
+    end);self.minimapLookOption:SetPoint("LEFT",self.minimapOption,"RIGHT",8,0)
+    text(panel,"Optional square atlas, north up. Uses the minimap's zoom controls and follows your position.",12,-82,316)
+    text(panel,"Shows zMap nodes, group members and transit. Uses Blizzard's map when your position is unavailable.",12,-126,316)
+    self:RefreshSettingsPanel();panel:Hide()
+end
+function M:ToggleSettingsPanel()
+    self:BuildUI();self.frame:Show()
+    if self.settingsPanel:IsShown() then self.settingsPanel:Hide()
+    else self.searchPanel:Hide();self.gatherPanel:Hide();self.transportPanel:Hide();self:RefreshSettingsPanel();self.settingsPanel:Show() end
+end

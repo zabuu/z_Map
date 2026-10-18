@@ -64,6 +64,7 @@ function M:MakeMarker(r,g,b,size)
     -- A solid diamond with a dark outline is readable on parchment and terrain.
     texture:SetTexture("Interface\\Buttons\\UI-RadioButton")
     texture:SetTexCoord(.25,.5,0,1); texture:SetVertexColor(r,g,b)
+    marker.texture=texture
     marker:Hide()
     return marker
 end
@@ -120,13 +121,14 @@ function M:Resize()
     self:LayoutTransportPanel()
     self:Constrain(); self.dirty=true
 end
-function M:FindMe()
+function M:FindMe(keepZoom)
     self:SamplePlayer(true)
     local p=self.player
     if not p then self:Print("The client has no map position here yet. Use Search to browse an area."); return end
-    if p.zone then self:FocusZone(p.zone) else self.view.space=p.space end
+    if keepZoom then self.focus=p.zone;self.view.space=p.space;self.animation=nil
+    elseif p.zone then self:FocusZone(p.zone) else self.view.space=p.space end
     self.view.x=p.x; self.view.y=p.y
-    self.view.scale=max(self.view.scale,.25)
+    if not keepZoom then self.view.scale=max(self.view.scale,.25) end
     self.animation=nil; self.dirty=true
 end
 function M:SamplePlayer(resetMap)
@@ -222,8 +224,10 @@ function M:BuildUI()
     f:EnableMouse(true)
     if f.SetClampedToScreen then f:SetClampedToScreen(true) end
     surface(f)
-    text(f,"|cff59d9c5z|rMap",14,-13,130,true)
-    self.areaLabel=text(f,"OctoWoW",145,-16,280)
+    text(f,"|cff59d9c5z|rMap",14,-13,70,true)
+    self.settingsButton=button(f,"Settings",75,function() self:ToggleSettingsPanel() end)
+    self.settingsButton:SetPoint("TOPLEFT",f,"TOPLEFT",82,-8)
+    self.areaLabel=text(f,"OctoWoW",175,-16,210)
     local close=button(f,"X",26,function() f:Hide() end)
     close:SetPoint("TOPRIGHT",f,"TOPRIGHT",-10,-9)
     local full=button(f,"[ ]",30,function() self:Maximize() end)
@@ -259,7 +263,7 @@ function M:BuildUI()
     find:SetPoint("LEFT",ek,"RIGHT",5,0)
     self.followButton=button(top,"Follow",50,function()
         zMapDB.follow=not zMapDB.follow
-        if zMapDB.follow then self:FindMe() end
+        if zMapDB.follow then self:FindMe(true) end
     end)
     self.followButton:SetPoint("LEFT",find,"RIGHT",5,0)
     self.styleButton=button(top,"Look: "..zMapDB.style,100,function() self:CycleStyle() end)
@@ -309,8 +313,11 @@ function M:BuildUI()
         self.layers[name]=layer
     end
     self.playerMarker=self:MakeMarker(.35,1,.87,24)
+    self.playerMarker.texture:SetTexture("Interface\\Minimap\\MinimapArrow")
+    self.playerMarker.texture:SetTexCoord(0,1,0,1);self.playerMarker.texture:SetVertexColor(1,1,1)
     self:BuildGatherUI(self.gatherButton,button,text,surface)
     self:BuildTransportUI(self.transportButton,button,text,surface)
+    self:BuildSettingsUI(button,text,surface)
     self.groupMarkers={}; self.pinMarkers={}
     for i=1,40 do self.groupMarkers[i]=self:MakeGroupMarker() end
     viewport:SetScript("OnMouseWheel",function()
@@ -357,6 +364,7 @@ function M:BuildUI()
         self:HideGroupTooltip()
         self:ClearGather();self.gatherPanel:Hide()
         self.transportPanel:Hide();self:HideTransportTooltip()
+        self.settingsPanel:Hide()
         self.drag=nil; self.animation=nil; search:ClearFocus(); panel:Hide()
         self:SaveView(); self:SaveWindow()
     end)
@@ -433,6 +441,7 @@ function M:Initialize()
     zMapDB.height=self.Clamp(tonumber(zMapDB.height) or 690,440,max(440,UIParent:GetHeight()-12))
     if zMapDB.style~="painted" and zMapDB.style~="terrain" then zMapDB.style="hybrid" end
     if zMapDB.interiors~="surface" and zMapDB.interiors~="underground" then zMapDB.interiors="auto" end
+    self:InitializeSync()
     self:InitializeGather()
     self:InitializeTransports()
     if type(zMapDB.pins)~="table" then zMapDB.pins={} end
@@ -456,6 +465,7 @@ function M:Initialize()
         self.focus=self.byID[saved.focus]; self:Constrain()
     end
     self:InstallToggle()
+    self:InitializeMinimap()
     self:Print("Loaded. Press M or type /zmap. Search includes custom zones and instance maps.")
 end
 SLASH_ZMAP1="/zmap"
@@ -481,8 +491,9 @@ SlashCmdList["ZMAP"]=function(message)
     elseif message=="nodes reset" then M:ResetGatherVisibility()
     elseif message=="nodes" then M:ToggleGatherPanel()
     elseif message=="transit" then M:ToggleTransportPanel()
+    elseif message=="settings" then M:ToggleSettingsPanel()
     elseif message=="help" then
-        M:Print("/zmap, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
+        M:Print("/zmap, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
     else M:Toggle() end
 end
 local events=CreateFrame("Frame")

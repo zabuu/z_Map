@@ -63,13 +63,14 @@ function M:DrawGrid(name,entries,step,alpha,warm)
     self:SetLayer(name,alpha)
     if alpha<=.002 and not warm then return end
     local grid=self:Grid(entries,step);local v=self.view
+    self.gridSeen=self.gridSeen or {};local seen=self.gridSeen
     local hw,hh=v.width/v.scale/2,v.height/v.scale/2
     for x=floor((v.x-hw)/step),floor((v.x+hw)/step) do
         for y=floor((v.y-hh)/step),floor((v.y+hh)/step) do
             local cell=grid.cells[x*2048+y]
             if cell then for _,tile in ipairs(cell) do
-                if tile.zSerial~=self.serial then
-                    tile.zSerial=self.serial
+                if seen[tile]~=self.serial then
+                    seen[tile]=self.serial
                     self:Texture(name,PREFIX..tile[1],tile[2],tile[3],tile[4],tile[5],1,tile[6],tile[7],tile[8],tile[9])
                 end
             end end
@@ -206,12 +207,13 @@ function M:Terrain(mix)
 end
 function M:Render()
     if not self.viewport then return end
-    self.serial=self.serial+1;self.loadsLeft=4;self.pending=false
+    self.serial=self.serial+1;self.loadsLeft=self.loadLimit or 4;self.pending=false
     local st=self.stats;st.drawn=0;st.loads=0;st.native=0;st.art=0;st.overview=0;st.interior=0
     for _,pool in pairs(self.pools) do pool.used=0;pool.pending=false end
     local v=self.view
     local terrain=smooth((v.scale-.20)/.44)
-    if zMapDB.style=="painted" then terrain=0 elseif zMapDB.style=="terrain" then terrain=1 end
+    local style=self.style or zMapDB.style
+    if style=="painted" then terrain=0 elseif style=="terrain" then terrain=1 end
     if v.space=="world" then
         self:SetLayer("overview",1)
         for _,t in ipairs(self.data.overview) do
@@ -302,8 +304,7 @@ function M:RenderMarkers()
     local p=self.player
     if p then
         self:PlaceMarker(self.playerMarker,p.x,p.y,p.space)
-        -- The stock minimap arrow is a 3D model. A familiar unrotated map dot
-        -- remains correct without any binary extension or facing API.
+        self:UpdatePlayerArrow(self.playerMarker.texture)
     else self.playerMarker:Hide() end
     for i,marker in ipairs(self.groupMarkers) do
         local member=self.group and self.group[i]
