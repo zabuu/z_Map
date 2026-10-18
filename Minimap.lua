@@ -10,6 +10,16 @@ local function facing(model)
     local ok,value=pcall(model.GetFacing,model)
     if ok and angle(value) then return value end
 end
+local function arrowKind(child,slot)
+    if not child or type(child.GetFacing)~="function" then return end
+    local ok,model=false,nil
+    if child.GetModel then ok,model=pcall(child.GetModel,child) end
+    if ok and type(model)=="string" and string.find(string.lower(model),"minimaparrow",1,true) then return "path" end
+    -- Vanilla's native arrow is not reliably exposed as a Lua Model with a
+    -- readable filename. The stock/pfUI fallback is its ninth child slot.
+    local name=child.GetName and child:GetName()
+    if name~="MiniMapCompassRing" and (not name or name=="" or slot==9) and angle(child:GetFacing()) then return "facing" end
+end
 function M:ReadMinimapCVar(name)
     if type(GetCVar)~="function" or self.missingMinimapCVars and self.missingMinimapCVars[name] then return nil end
     local ok,value=pcall(GetCVar,name)
@@ -29,12 +39,15 @@ function M:FindNativePlayerArrow()
     local now=GetTime and GetTime() or 0
     if not self.nativeArrow and Minimap and Minimap.GetChildren and now>=(self.arrowSearchAt or 0) then
         self.arrowSearchAt=now+2
-        for _,child in ipairs({Minimap:GetChildren()}) do
-            if child.IsObjectType and child:IsObjectType("Model") and child.GetModel then
-                local model=child:GetModel()
-                if type(model)=="string" and string.find(string.lower(model),"minimaparrow",1,true) then self.nativeArrow=child;break end
+        local candidate,source
+        for slot,child in pairs({Minimap:GetChildren()}) do
+            local ok,kind=pcall(arrowKind,child,slot)
+            if ok and kind=="path" then candidate=child;source="model path";break end
+            if ok and kind=="facing" and (not candidate or slot==9) then
+                candidate=child;source=slot==9 and "native slot 9" or "native facing frame"
             end
         end
+        self.nativeArrow=candidate;self.nativeArrowSource=source
     end
     return self.nativeArrow
 end
@@ -75,7 +88,9 @@ function M:UseNativeMinimapPlayer(enabled)
     -- player model rather than drawing another arrow over a client model.
     self:SuppressNativePlayerArrow(enabled and rotated)
     local arrow=enabled and self:FindNativePlayerArrow() or self.nativeArrow
-    self.miniUsesNativeArrow=enabled and not rotated and arrow and arrow:IsShown() and arrow:GetAlpha()>0 or false
+    -- The native minimap model can render while IsShown() returns nil. Its
+    -- existence, not that unreliable flag, decides whether to draw a copy.
+    self.miniUsesNativeArrow=enabled and not rotated and arrow and arrow:GetAlpha()>0 or false
     if self.miniUsesNativeArrow then
         local level=self.miniContext.layers.markers:GetFrameLevel()+1
         local current=arrow:GetFrameLevel()
@@ -157,6 +172,8 @@ function M:RenderMinimapMarkers(ctx)
         if not marker then marker=ctx:MakeGroupMarker();ctx.groupMarkers[i]=marker end
         marker.member=member;local r,g,b=self:ClassColor(member.class)
         if marker.r~=r or marker.g~=g or marker.b~=b then marker.texture:SetVertexColor(r,g,b);marker.r=r;marker.g=g;marker.b=b end
+        local size=14*(ctx.gatherIconScale or 1)
+        if marker:GetWidth()~=size then marker:SetWidth(size);marker:SetHeight(size) end
         ctx:PlaceMarker(marker,member.x,member.y,member.space);used=i
     end
     for i=used+1,table.getn(ctx.groupMarkers) do ctx.groupMarkers[i]:Hide() end

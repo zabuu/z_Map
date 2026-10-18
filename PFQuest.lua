@@ -45,6 +45,11 @@ end
 function M:InstallPFQuest()
     if not self:PFQuestAvailable() or self.pfSource==pfMap then return end
     self.pfSource=pfMap
+    local nativeEvent=pfMap:GetScript("OnEvent")
+    if nativeEvent then pfMap:SetScript("OnEvent",function()
+        if event=="WORLD_MAP_UPDATE" and M.groupMapProbe then return end
+        nativeEvent()
+    end) end
     for _,name in ipairs({"AddNode","DeleteNode","UpdateNodes"}) do
         if type(pfMap[name])=="function" then pfMap[name]=changedAfter(pfMap[name]) end
     end

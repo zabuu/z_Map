@@ -131,6 +131,78 @@ function M:FindMe(keepZoom)
     if not keepZoom then self.view.scale=max(self.view.scale,.25) end
     self.animation=nil; self.dirty=true
 end
+local function positionNumber(value)
+    return type(value)=="number" and value==value and abs(value)<10000000
+end
+function M:RefreshDistantGroupPositions(pending,now)
+    if table.getn(pending)==0 or now<(self.groupProbeAt or 0) or self.groupMapProbe or
+        WorldMapFrame and WorldMapFrame:IsShown() or type(SetMapZoom)~="function" or
+        type(GetCurrentMapContinent)~="function" or type(GetCurrentMapZone)~="function" then return end
+    self.groupProbeAt=now+2
+    local continent,zone=GetCurrentMapContinent(),GetCurrentMapZone()
+    local priorThis,priorEvent=this,event
+    local a1,a2,a3,a4,a5,a6,a7,a8,a9=arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8,arg9
+    local sampled={};self.groupMapProbe=true
+    local ok=pcall(function()
+        -- The native world projection matches the atlas's WorldMapContinent
+        -- layout. Read all unavailable groupmates in one batched world view.
+        SetMapZoom(0)
+        for _,member in ipairs(pending) do
+            local x,y=GetPlayerMapPosition(member.unit)
+            if positionNumber(x) and positionNumber(y) and (x~=0 or y~=0) and x>=0 and x<=1 and y>=0 and y<=1 then
+                local bounds=self.data.bounds
+                sampled[member.name]={x=bounds[1]+x*(bounds[3]-bounds[1]),y=bounds[2]+y*(bounds[4]-bounds[2]),at=now}
+            end
+        end
+    end)
+    local restored=pcall(function()
+        if continent and continent>0 then SetMapZoom(continent,zone or 0) else SetMapToCurrentZone() end
+    end)
+    -- Even a rejected position query must leave other addons on the old map.
+    if not restored then restored=pcall(SetMapToCurrentZone) end
+    self.groupMapProbe=nil;this=priorThis;event=priorEvent
+    arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8,arg9=a1,a2,a3,a4,a5,a6,a7,a8,a9
+    if ok and restored then
+        for _,member in ipairs(pending) do self.groupWorldPositions[member.name]=sampled[member.name] end
+    end
+end
+function M:SampleGroup(selected)
+    self.group=self.group or {};self.groupWorldPositions=self.groupWorldPositions or {}
+    local members,pending,keep={},{},{}
+    local now=GetTime and GetTime() or 0
+    if zMapDB.group~=false then
+        local count=GetNumRaidMembers and GetNumRaidMembers() or 0
+        local prefix="raid"
+        if count==0 then prefix="party";count=GetNumPartyMembers and GetNumPartyMembers() or 0 end
+        for i=1,min(40,count) do
+            local unit=prefix..i
+            if not UnitIsUnit(unit,"player") and (not UnitIsConnected or UnitIsConnected(unit)) then
+                local member={unit=unit,name=UnitName(unit) or unit};keep[member.name]=true
+                local x,y=GetPlayerMapPosition(unit)
+                if selected and positionNumber(x) and positionNumber(y) and (x~=0 or y~=0) then
+                    member.x,member.y=self:ZonePoint(selected,x,y);member.space=selected.space
+                else table.insert(pending,member) end
+                table.insert(members,member)
+            end
+        end
+    end
+    for name in pairs(self.groupWorldPositions) do if not keep[name] then self.groupWorldPositions[name]=nil end end
+    self:RefreshDistantGroupPositions(pending,now)
+    local used=0
+    for _,member in ipairs(members) do
+        if not member.x then
+            local point=self.groupWorldPositions[member.name]
+            if point and now-point.at<=5 then member.x=point.x;member.y=point.y;member.space="world" end
+        end
+        if member.x then
+            used=used+1;local result=self.group[used] or {}
+            result.x=member.x;result.y=member.y;result.space=member.space
+            result.unit=member.unit;result.name=member.name
+            result.className,result.class=UnitClass(member.unit);self.group[used]=result
+        end
+    end
+    for i=used+1,table.getn(self.group) do self.group[i]=nil end
+end
 function M:SamplePlayer(resetMap)
     -- GetPlayerMapPosition is native 1.12 and works without ClassicAPI/SuperWoW.
     -- Keep the hidden stock map on the player's area, so its normalization stays
@@ -144,33 +216,13 @@ function M:SamplePlayer(resetMap)
     end
     self.sampleZone=selected
     local x,y=GetPlayerMapPosition("player")
+    self:SampleGroup(selected)
     if not selected or not x or not y or (x==0 and y==0) then
-        self.player=nil; self.group={}; self:RenderMarkers(); return
+        self.player=nil; self:RenderMarkers(); return
     end
     local wx,wy=self:ZonePoint(selected,x,y)
     self.player=self.player or {}
     self.player.x=wx; self.player.y=wy; self.player.space=selected.space; self.player.zone=selected
-    self.group=self.group or {}
-    local used=0
-    if zMapDB.group~=false then
-        local count=GetNumRaidMembers and GetNumRaidMembers() or 0
-        local prefix="raid"
-        if count==0 then prefix="party"; count=GetNumPartyMembers and GetNumPartyMembers() or 0 end
-        for i=1,min(40,count) do
-            local unit=prefix..i
-            local ux,uy=GetPlayerMapPosition(unit)
-            if ux and uy and (ux~=0 or uy~=0) and not UnitIsUnit(unit,"player") then
-                local gx,gy=self:ZonePoint(selected,ux,uy)
-                used=used+1
-                local member=self.group[used] or {}
-                member.x=gx;member.y=gy;member.space=selected.space
-                member.unit=unit;member.name=UnitName(unit) or unit
-                member.className,member.class=UnitClass(unit)
-                self.group[used]=member
-            end
-        end
-    end
-    for i=used+1,table.getn(self.group) do self.group[i]=nil end
     if zMapDB.follow and not self.drag and not self.animation then
         if selected.space~="world" then self.focus=selected end
         self.view.space=selected.space; self.view.x=wx; self.view.y=wy; self.dirty=true
@@ -491,7 +543,7 @@ SlashCmdList["ZMAP"]=function(message)
         M:Print("Nodes: "..table.getn(M.gatherLogNodes).." logged | sharing "..M:GatherSharingStatus()..
             " | "..(M.gatherShareReceived or 0).." new shared locations this session.")
         if M:PFQuestAvailable() then M:Print("pfQuest: "..(zMapDB.pfQuest and "on" or "off").." | "..(M.pfShown or 0).." map icons | "..(M.pfRoutesShown or 0).." route dots.") end
-        if zMapDB.minimapOverride then M:Print("Minimap player: "..(M.miniUsesNativeArrow and "native model" or "projected arrow")..".") end
+        if zMapDB.minimapOverride then M:Print("Minimap player: "..(M.miniUsesNativeArrow and "native model ("..(M.nativeArrowSource or "detected")..")" or "projected arrow")..".") end
     elseif message=="nodes reset" then M:ResetGatherVisibility()
     elseif message=="nodes" then M:ToggleGatherPanel()
     elseif message=="transit" then M:ToggleTransportPanel()
