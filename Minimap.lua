@@ -3,7 +3,7 @@ local M=zMap
 local ARROW="Interface\\Minimap\\MinimapArrow"
 local outdoor={466+2/3,400,333+1/3,266+2/3,200,133+1/3}
 local indoor={300,240,180,120,80,50}
-local layerNames={"overview","art","artFine","terrain","fine","detail","caves","interior","transitRoutes","gather","transit","markers"}
+local layerNames={"overview","art","artFine","terrain","fine","detail","caves","interior","transitRoutes","gather","transit","questRoutes","quests","markers"}
 local function angle(value) return type(value)=="number" and value==value and math.abs(value)<1000 end
 local function facing(model)
     if not model or not model.GetFacing then return end
@@ -31,9 +31,15 @@ function M:SuppressNativePlayerArrow(enabled)
         if alpha~=0 then
             self.nativeArrowAlpha=alpha;arrow:SetAlpha(0)
         elseif self.nativeArrowAlpha==nil then self.nativeArrowAlpha=0 end
+        -- The 1.12 model renderer can ignore alpha. Hide the model itself too;
+        -- its native facing remains readable without a second rendered arrow.
+        if arrow:IsShown() then self.nativeArrowShown=true;arrow:Hide()
+        elseif self.nativeArrowShown==nil then self.nativeArrowShown=false end
     elseif self.nativeArrowAlpha~=nil then
         if arrow:GetAlpha()==0 then arrow:SetAlpha(self.nativeArrowAlpha) end
         self.nativeArrowAlpha=nil
+        if self.nativeArrowShown and not arrow:IsShown() then arrow:Show() end
+        self.nativeArrowShown=nil
     end
 end
 function M:PlayerFacing()
@@ -47,6 +53,24 @@ function M:PlayerFacing()
     value=facing(self:FindNativePlayerArrow())
     if value then self.playerFacing=value end
     return self.playerFacing
+end
+function M:UseNativeMinimapPlayer(enabled)
+    local rotated=GetCVar and GetCVar("rotateMinimap")=="1"
+    -- The ordinary 1.12 minimap is north up, like this atlas. Reuse its actual
+    -- player model rather than drawing another arrow over a client model.
+    self:SuppressNativePlayerArrow(enabled and rotated)
+    local arrow=enabled and self:FindNativePlayerArrow() or self.nativeArrow
+    self.miniUsesNativeArrow=enabled and not rotated and arrow and arrow:IsShown() and arrow:GetAlpha()>0 or false
+    if self.miniUsesNativeArrow then
+        local level=self.miniContext.layers.markers:GetFrameLevel()+1
+        local current=arrow:GetFrameLevel()
+        if current~=self.nativeArrowAppliedLevel then self.nativeArrowLevel=current end
+        if current~=level then arrow:SetFrameLevel(level) end
+        self.nativeArrowAppliedLevel=level
+    elseif self.nativeArrowLevel~=nil then
+        if arrow and arrow:GetFrameLevel()==self.nativeArrowAppliedLevel then arrow:SetFrameLevel(self.nativeArrowLevel) end
+        self.nativeArrowLevel=nil;self.nativeArrowAppliedLevel=nil
+    end
 end
 function M:UpdatePlayerArrow(texture)
     if not texture then return end
@@ -102,14 +126,16 @@ function M:CreateMinimapContext()
     end
     frame:SetScript("OnHide",function()
         ctx:HideGatherTooltip();ctx:HideGroupTooltip();ctx:HideTransportTooltip()
-        M:SuppressNativePlayerArrow(false);M:RaiseMinimapWidgets(false)
+        ctx:HidePFQuest();M:RestorePFQuestMinimap();M:UseNativeMinimapPlayer(false);M:RaiseMinimapWidgets(false)
     end)
     frame:Hide();self.miniContext=ctx;return ctx
 end
 function M:RenderMinimapMarkers(ctx)
-    ctx:RenderGatherMarkers();ctx:RenderTransports()
+    ctx:RenderGatherMarkers();ctx:RenderTransports();ctx:RenderPFQuest()
     local p=ctx.player
-    if p then ctx:PlaceMarker(ctx.playerMarker,p.x,p.y,p.space);self:UpdatePlayerArrow(ctx.playerMarker.texture) end
+    if p and not self.miniUsesNativeArrow then
+        ctx:PlaceMarker(ctx.playerMarker,p.x,p.y,p.space);self:UpdatePlayerArrow(ctx.playerMarker.texture)
+    else ctx.playerMarker:Hide() end
     local used=0
     for i,member in ipairs(self.group or {}) do
         local marker=ctx.groupMarkers[i]
@@ -155,7 +181,7 @@ function M:RaiseMinimapWidgets(enabled)
 end
 function M:HideAtlasMinimap()
     if self.miniContext and self.miniContext.frame:IsShown() then self.miniContext.frame:Hide() end
-    self:SuppressNativePlayerArrow(false)
+    self:UseNativeMinimapPlayer(false)
     self:RaiseMinimapWidgets(false)
 end
 function M:SetAtlasMinimap(enabled)
@@ -183,8 +209,7 @@ function M:UpdateAtlasMinimap(elapsed)
     ctx.player=p;ctx.group=self.group;ctx.gatherNodes=self.gatherNodes;ctx.focus=p.zone or false;ctx.style=style;ctx.interiorMode=zMapDB.interiors
     if ctx.frame:GetWidth()~=w then ctx.frame:SetWidth(w) end;if ctx.frame:GetHeight()~=h then ctx.frame:SetHeight(h) end
     if not ctx.frame:IsShown() then ctx.frame:Show();changed=true end
-    -- Keep the native model running for its facing, but draw only our arrow.
-    self:SuppressNativePlayerArrow(true)
+    self:UseNativeMinimapPlayer(true)
     self:RaiseMinimapWidgets(true)
     if not large then self:UpdateGather(elapsed) end
     if changed or ctx.pending then ctx:Render() else self:RenderMinimapMarkers(ctx) end
@@ -209,17 +234,21 @@ function M:InitializeMinimap()
             if self.frame and self.frame:IsShown() then self:UpdatePlayerArrow(self.playerMarker and self.playerMarker.texture) end
             if self.miniContext and self.miniContext.frame:IsShown() then self:UpdatePlayerArrow(self.miniContext.playerMarker.texture) end
         end
-        if miniElapsed>=.1 then local elapsed=miniElapsed;miniElapsed=0;self:UpdateAtlasMinimap(elapsed) end
+        if miniElapsed>=.1 then
+            local elapsed=miniElapsed;miniElapsed=0
+            self:UpdateAtlasMinimap(elapsed);self:UpdatePFQuest(elapsed)
+        end
     end)
 end
 function M:RefreshSettingsPanel()
     if not self.settingsPanel then return end
     self.minimapOption.label:SetText(zMapDB.minimapOverride and "Minimap: zMap" or "Minimap: Blizzard")
     self.minimapLookOption.label:SetText("Look: "..(zMapDB.minimapStyle=="match" and "same as map" or zMapDB.minimapStyle))
+    self.pfQuestOption.label:SetText(not self:PFQuestAvailable() and "pfQuest: not loaded" or zMapDB.pfQuest and "pfQuest: on" or "pfQuest: off")
 end
 function M:BuildSettingsUI(button,text,surface)
     local panel=CreateFrame("Frame",nil,self.frame);self.settingsPanel=panel
-    panel:SetWidth(340);panel:SetHeight(204);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
+    panel:SetWidth(340);panel:SetHeight(250);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
     panel:SetFrameLevel(self.frame:GetFrameLevel()+50);panel:EnableMouse(true);surface(panel)
     text(panel,"Map settings",12,-12,270,true)
     local close=button(panel,"X",24,function() panel:Hide() end);close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-8,-8)
@@ -231,6 +260,9 @@ function M:BuildSettingsUI(button,text,surface)
     end);self.minimapLookOption:SetPoint("LEFT",self.minimapOption,"RIGHT",8,0)
     text(panel,"Optional square atlas, north up. Uses the minimap's zoom controls and follows your position.",12,-82,316)
     text(panel,"Shows zMap nodes, group members and transit. Uses Blizzard's map when your position is unavailable.",12,-126,316)
+    self.pfQuestOption=button(panel,"",150,function() self:SetPFQuest(not zMapDB.pfQuest) end)
+    self.pfQuestOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-174)
+    text(panel,"Quest icons, tooltips, map links and active paths. Uses pfQuest's filters and route selection.",12,-208,316)
     self:RefreshSettingsPanel();panel:Hide()
 end
 function M:ToggleSettingsPanel()

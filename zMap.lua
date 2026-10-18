@@ -306,7 +306,7 @@ function M:BuildUI()
     viewport:SetPoint("TOPLEFT",f,"TOPLEFT",10,-77)
     surface(viewport,.075,.12,.15); viewport:EnableMouse(true); viewport:EnableMouseWheel(true)
     self.layers={}
-    local layers={"overview","art","artFine","terrain","fine","detail","caves","interior","transitRoutes","gather","transit","markers"}
+    local layers={"overview","art","artFine","terrain","fine","detail","caves","interior","transitRoutes","gather","transit","questRoutes","quests","markers"}
     for i,name in ipairs(layers) do
         local layer=CreateFrame("Frame",nil,viewport)
         layer:SetAllPoints(viewport); layer:SetFrameLevel(viewport:GetFrameLevel()+i)
@@ -362,6 +362,7 @@ function M:BuildUI()
     end)
     f:SetScript("OnHide",function()
         self:HideGroupTooltip()
+        self:HidePFQuest()
         self:ClearGather();self.gatherPanel:Hide()
         self.transportPanel:Hide();self:HideTransportTooltip()
         self.settingsPanel:Hide()
@@ -465,6 +466,7 @@ function M:Initialize()
         self.focus=self.byID[saved.focus]; self:Constrain()
     end
     self:InstallToggle()
+    self:InitializePFQuest()
     self:InitializeMinimap()
     self:Print("Loaded. Press M or type /zmap. Search includes custom zones and instance maps.")
 end
@@ -488,6 +490,8 @@ SlashCmdList["ZMAP"]=function(message)
         end
         M:Print("Nodes: "..table.getn(M.gatherLogNodes).." logged | sharing "..M:GatherSharingStatus()..
             " | "..(M.gatherShareReceived or 0).." new shared locations this session.")
+        if M:PFQuestAvailable() then M:Print("pfQuest: "..(zMapDB.pfQuest and "on" or "off").." | "..(M.pfShown or 0).." map icons | "..(M.pfRoutesShown or 0).." route dots.") end
+        if zMapDB.minimapOverride then M:Print("Minimap player: "..(M.miniUsesNativeArrow and "native model" or "projected arrow")..".") end
     elseif message=="nodes reset" then M:ResetGatherVisibility()
     elseif message=="nodes" then M:ToggleGatherPanel()
     elseif message=="transit" then M:ToggleTransportPanel()

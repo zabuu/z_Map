@@ -301,6 +301,7 @@ function M:RenderMarkers()
     if not self.playerMarker then return end
     self:RenderGatherMarkers()
     self:RenderTransports()
+    self:RenderPFQuest()
     local p=self.player
     if p then
         self:PlaceMarker(self.playerMarker,p.x,p.y,p.space)

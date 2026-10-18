@@ -2,9 +2,9 @@
 ## Title: |cff59d9c5z|rMap
 ## Notes: zSuite seamless OctoWoW atlas with painted maps and close-up terrain.
 ## Author: Samer / Zab
-## Version: 1.5.2
+## Version: 1.6.0
 ## DefaultState: enabled
-## OptionalDeps: pfUI, Magnify, Cartographer, ShaguTweaks
+## OptionalDeps: pfUI, pfQuest, pfQuest-turtle, Magnify, Cartographer, ShaguTweaks
 ## SavedVariables: zMapDB
 
 MapData.lua
@@ -25,6 +25,7 @@ Transports.lua
 TransportMotion.lua
 TransportSync.lua
 TransportUI.lua
+PFQuest.lua
 Minimap.lua
 zMap.lua
 Bindings.xml
