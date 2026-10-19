@@ -147,6 +147,20 @@ function M:SetHUD(enabled)
     self:RefreshSettingsPanel()
 end
 local function finite(value) return type(value)=="number" and value==value and abs(value)<10000000 end
+M.hudOffsetLimit=3000
+local function offsetValue(value)
+    value=tonumber(value)
+    return finite(value) and M.Clamp(floor(value+.5),-M.hudOffsetLimit,M.hudOffsetLimit) or 0
+end
+function M:SetHUDOffset(axis,value)
+    if axis~="X" and axis~="Y" then return end
+    zMapDB["hudOffset"..axis]=offsetValue(value)
+    self:RefreshHUDPositionPanel()
+end
+function M:ResetHUDOffsets()
+    zMapDB.hudOffsetX=0;zMapDB.hudOffsetY=0
+    self:RefreshHUDPositionPanel()
+end
 local function validCamera(value)
     return type(value)=="table" and finite(value.distance) and value.distance>=0 and value.distance<1000 and
         finite(value.pitch) and abs(value.pitch)<=1 and finite(value.fov) and value.fov>0 and
@@ -204,12 +218,13 @@ function M:AnchorHUD(ctx,p)
     end
     local fraction=zMapDB.hudCenterY or .43
     local worldScale,frameScale=reference:GetEffectiveScale(),ctx.frame:GetEffectiveScale()
-    local offset=(fraction-.5)*height*(frameScale>0 and worldScale/frameScale or 1)
-    -- Anchor X directly to the viewport's CENTER. Convert only the vertical
-    -- offset into our scaled frame units; never recenter from camera motion.
-    if ctx.anchorReference~=reference or ctx.anchorOffsetY~=offset then
-        ctx.frame:ClearAllPoints();ctx.frame:SetPoint("CENTER",reference,"CENTER",0,offset)
-        ctx.anchorReference=reference;ctx.anchorOffsetY=offset
+    local offsetX=zMapDB.hudOffsetX or 0
+    local offset=(fraction-.5)*height*(frameScale>0 and worldScale/frameScale or 1)+(zMapDB.hudOffsetY or 0)
+    -- Convert the automatic vertical base to frame units, then apply the
+    -- user's offsets on both axes without changing the world coordinates.
+    if ctx.anchorReference~=reference or ctx.anchorOffsetX~=offsetX or ctx.anchorOffsetY~=offset then
+        ctx.frame:ClearAllPoints();ctx.frame:SetPoint("CENTER",reference,"CENTER",offsetX,offset)
+        ctx.anchorReference=reference;ctx.anchorOffsetX=offsetX;ctx.anchorOffsetY=offset
     end
     ctx.anchorMode="fixed screen anchor"
 end
@@ -270,6 +285,7 @@ function M:InitializeHUD()
     zMapDB.hudEnabled=zMapDB.hudEnabled==true;zMapDB.hudQuests=zMapDB.hudQuests==true
     zMapDB.hudRange=self.Clamp(tonumber(zMapDB.hudRange) or 240,120,360)
     zMapDB.hudOpacity=self.Clamp(tonumber(zMapDB.hudOpacity) or .35,.1,.6)
+    zMapDB.hudOffsetX=offsetValue(zMapDB.hudOffsetX);zMapDB.hudOffsetY=offsetValue(zMapDB.hudOffsetY)
     local center=tonumber(zMapDB.hudCenterY)
     zMapDB.hudCenterY=finite(center) and center>=.05 and center<=.95 and center or nil
     self.hudAlignPending=zMapDB.hudCenterY==nil

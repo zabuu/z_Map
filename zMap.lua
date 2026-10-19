@@ -432,6 +432,7 @@ function M:BuildUI()
     self.coords:SetJustifyH("RIGHT"); self.coords:SetTextColor(.65,.72,.8)
     f:SetScript("OnSizeChanged",function() if self.viewport then self:Resize() end end)
     f:SetScript("OnShow",function()
+        if self.hudPositionPanel then self.hudPositionPanel:Hide() end
         self.mapChanged=true; self:SamplePlayer(true); self:Resize()
         self.gatherElapsed=0;self:SampleGather()
         if zMapDB.reopen=="player" then self:FindMe() end
@@ -578,9 +579,10 @@ SlashCmdList["ZMAP"]=function(message)
     elseif message=="settings" then M:ToggleSettingsPanel()
     elseif message=="hud" then M:SetHUD(not zMapDB.hudEnabled)
     elseif message=="hud align" then M:AlignHUD()
+    elseif message=="hud position" then M:ToggleHUDPositionPanel()
     elseif message=="hud quests" then zMapDB.hudQuests=not zMapDB.hudQuests;M:RefreshSettingsPanel();M:Print("HUD quests: "..(zMapDB.hudQuests and "on" or "off")..".")
     elseif message=="help" then
-        M:Print("/zmap, /zmap hud, /zmap hud align, /zmap hud quests, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
+        M:Print("/zmap, /zmap hud, /zmap hud align, /zmap hud position, /zmap hud quests, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
     else M:Toggle() end
 end
 local events=CreateFrame("Frame")

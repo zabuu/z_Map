@@ -383,6 +383,7 @@ function M:InitializeMinimap()
 end
 function M:RefreshSettingsPanel()
     if self.hudButton then self.hudButton.label:SetText(zMapDB.hudEnabled and "HUD: on" or "HUD: off") end
+    self:RefreshHUDPositionPanel()
     if not self.settingsPanel then return end
     self.minimapOption.label:SetText(zMapDB.minimapOverride and "Minimap: zMap" or "Minimap: Blizzard")
     self.minimapLookOption.label:SetText("Look: "..(zMapDB.minimapStyle=="match" and "same as map" or zMapDB.minimapStyle))
@@ -391,12 +392,63 @@ function M:RefreshSettingsPanel()
     self.hudRangeOption.label:SetText("HUD range: "..zMapDB.hudRange.."y")
     self.hudOpacityOption.label:SetText("Wall opacity: "..math.floor(zMapDB.hudOpacity*100+.5).."%")
 end
+function M:RefreshHUDPositionPanel()
+    if not self.hudPositionPanel then return end
+    self.hudOffsetRefreshing=true
+    for _,axis in ipairs({"X","Y"}) do
+        local slider=self["hudOffset"..axis.."Slider"];local value=zMapDB["hudOffset"..axis] or 0
+        slider:SetValue(value)
+        slider.label:SetText((axis=="X" and "Horizontal: " or "Vertical: ")..string.format("%+d",value))
+    end
+    self.hudOffsetRefreshing=nil
+end
+function M:BuildHUDPositionUI(button,text,surface)
+    local panel=CreateFrame("Frame","zMapHUDPosition",UIParent);self.hudPositionPanel=panel
+    panel:SetWidth(340);panel:SetHeight(330);panel:SetPoint("LEFT",UIParent,"LEFT",24,0)
+    panel:SetFrameStrata("DIALOG");panel:EnableMouse(true);surface(panel)
+    if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
+    text(panel,"HUD position",12,-12,260,true)
+    local close=button(panel,"X",24,function() panel:Hide() end);close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-8,-8)
+    text(panel,"Drag to move the HUD. Use the mouse wheel over a slider for fine 1-unit adjustments.",12,-44,316)
+    for i,entry in ipairs({"X","Y"}) do
+        local axis=entry
+        local top=86+(i-1)*78
+        local slider=CreateFrame("Slider",nil,panel);self["hudOffset"..axis.."Slider"]=slider
+        slider:SetWidth(316);slider:SetHeight(18);slider:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-top-22)
+        slider:SetOrientation("HORIZONTAL");slider:SetMinMaxValues(-self.hudOffsetLimit,self.hudOffsetLimit)
+        if slider.SetValueStep then slider:SetValueStep(1) end
+        surface(slider,.055,.07,.09);slider:SetThumbTexture("Interface\\Buttons\\WHITE8X8")
+        local thumb=slider:GetThumbTexture();thumb:SetWidth(12);thumb:SetHeight(24);thumb:SetVertexColor(.35,.85,.77,1)
+        slider.label=text(panel,"",12,-top,316)
+        text(panel,axis=="X" and "Left (-3000)" or "Down (-3000)",12,-top-46,150)
+        local high=text(panel,axis=="X" and "Right (+3000)" or "Up (+3000)",178,-top-46,150);high:SetJustifyH("RIGHT")
+        slider:EnableMouseWheel(true)
+        slider:SetScript("OnValueChanged",function()
+            if not self.hudOffsetRefreshing then self:SetHUDOffset(axis,slider:GetValue()) end
+        end)
+        slider:SetScript("OnMouseWheel",function() self:SetHUDOffset(axis,slider:GetValue()+(arg1 or 0)) end)
+    end
+    self.hudOffsetReset=button(panel,"Reset offsets",150,function() self:ResetHUDOffsets() end)
+    self.hudOffsetReset:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-252)
+    local back=button(panel,"Map settings",150,function() panel:Hide();self:ToggleSettingsPanel() end)
+    back:SetPoint("LEFT",self.hudOffsetReset,"RIGHT",8,0)
+    text(panel,"Offsets save automatically and stay applied after camera alignment.",12,-288,316)
+    table.insert(UISpecialFrames,"zMapHUDPosition");self:RefreshHUDPositionPanel();panel:Hide()
+end
+function M:ToggleHUDPositionPanel()
+    self:BuildUI()
+    if self.hudPositionPanel:IsShown() then self.hudPositionPanel:Hide() else
+        self:SetHUD(true);self.frame:Hide();self:RefreshHUDPositionPanel();self.hudPositionPanel:Show()
+    end
+end
 function M:BuildSettingsUI(button,text,surface)
     local panel=CreateFrame("Frame",nil,self.frame);self.settingsPanel=panel
     panel:SetWidth(340);panel:SetHeight(390);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
     panel:SetFrameLevel(self.frame:GetFrameLevel()+50);panel:EnableMouse(true);surface(panel)
-    text(panel,"Map settings",12,-12,270,true)
+    text(panel,"Map settings",12,-12,140,true)
     local close=button(panel,"X",24,function() panel:Hide() end);close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-8,-8)
+    self.hudPositionOption=button(panel,"HUD position",140,function() self:ToggleHUDPositionPanel() end)
+    self.hudPositionOption:SetPoint("RIGHT",close,"LEFT",-8,0)
     self.minimapOption=button(panel,"",150,function() self:SetAtlasMinimap(not zMapDB.minimapOverride) end)
     self.minimapOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-42)
     self.minimapLookOption=button(panel,"",150,function()
@@ -419,7 +471,7 @@ function M:BuildSettingsUI(button,text,surface)
         local opacity=zMapDB.hudOpacity;zMapDB.hudOpacity=opacity<.3 and .35 or opacity<.45 and .5 or .2;self:RefreshSettingsPanel()
     end);self.hudOpacityOption:SetPoint("LEFT",self.hudRangeOption,"RIGHT",8,0)
     text(panel,"Shift+M toggles the HUD. Feet alignment locks between camera zoom/tilt changes and refreshes after settling.",12,-328,316)
-    self:RefreshSettingsPanel();panel:Hide()
+    self:BuildHUDPositionUI(button,text,surface);self:RefreshSettingsPanel();panel:Hide()
 end
 function M:ToggleSettingsPanel()
     self:BuildUI();self.frame:Show()
