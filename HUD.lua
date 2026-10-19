@@ -81,7 +81,7 @@ function M:StartHUDWallQuery()
     end
     table.sort(tasks,function(a,b) return a.distance<b.distance end)
     ctx.wallJob={tasks=tasks,task=1,offset=1,results={},scanned=0}
-    ctx.wallQuery={x=v.x,y=v.y,space=v.space,z=ctx.player.z,range=zMapDB.hudRange}
+    ctx.wallQuery={x=v.x,y=v.y,space=v.space,z=ctx.floorZ,range=zMapDB.hudRange}
 end
 function M:StepHUDWallQuery()
     local ctx=self.hudContext;local job=ctx.wallJob
@@ -127,7 +127,7 @@ function M:CreateHUDContext()
     ctx.GatherPresentation=function() return 13,.9,false end
     ctx.GatherNodeVisible=function(self,node)
         local sx,sy=self:ToScreen(node.x,node.y)
-        return self:HUDVisibility(sx,sy)>.03 and (not self.player.z or not node.z or abs(node.z-self.player.z)<18)
+        return self:HUDVisibility(sx,sy)>.03 and (not self.floorZ or not node.z or abs(node.z-self.floorZ)<18)
     end
     ctx.MakeGatherMarker=function(self)
         local marker=M.MakeGatherMarker(self);marker:EnableMouse(false);marker:EnableMouseWheel(false);return marker
@@ -188,9 +188,13 @@ function M:UpdateHUDCamera(elapsed,p)
     if not ok or not finite(x) or not finite(y) or not finite(z) or not finite(fx) or not finite(fy) or not finite(fz) then return end
     local length=sqrt(fx*fx+fy*fy+fz*fz)
     if length<.001 then return end
-    -- Translation and horizontal yaw do not change the vertical calibration.
-    local camera={distance=sqrt((x-p.rawX)^2+(y-p.rawY)^2+(z-p.rawZ)^2),pitch=fz/length,fov=fov,aspect=aspect}
+    -- Vertical camera lag during jumps/falls must not be mistaken for zoom.
+    local camera={distance=sqrt((x-p.rawX)^2+(y-p.rawY)^2),pitch=fz/length,fov=fov,aspect=aspect}
     if not validCamera(camera) then return end
+    if self.hudCameraBaselineNeeded and not self.hudAlignPending then
+        self.hudCameraApplied=camera;zMapDB.hudCamera=camera
+    end
+    self.hudCameraBaselineNeeded=nil
     if not sameCamera(camera,self.hudCameraSample) then
         self.hudCameraSample=camera;self.hudCameraStable=0
         self.hudCameraNeedsAlignment=not sameCamera(camera,self.hudCameraApplied)
@@ -200,6 +204,21 @@ function M:UpdateHUDCamera(elapsed,p)
             self.hudAlignPending=true;self.hudCameraNeedsAlignment=false
         end
     end
+end
+function M:UpdateHUDFloor(ctx,p,elapsed)
+    ctx.floorElapsed=(ctx.floorElapsed or 0)+elapsed
+    local reset=ctx.floorSpace~=p.space or ctx.floorZone~=p.zone or
+        ctx.floorX and (ctx.floorX-p.x)^2+(ctx.floorY-p.y)^2>40000
+    if reset then ctx.floorGrounded=false;ctx.floorZ=p.z end
+    if not reset and ctx.floorElapsed<.5 then return end
+    ctx.floorElapsed=0;ctx.floorSpace=p.space;ctx.floorZone=p.zone;ctx.floorX=p.x;ctx.floorY=p.y
+    if p.rawX and type(zAPI)=="function" then
+        -- Start just above the feet so an overhead roof cannot win the trace.
+        local ok,hit,x,y,z=pcall(zAPI,"raycast",p.rawX,p.rawY,p.rawZ+.25,p.rawX,p.rawY,p.rawZ-180)
+        if ok and hit==1 and finite(z) and z<=p.rawZ+.3 and z>=p.rawZ-180.1 then
+            ctx.floorZ=z;ctx.floorGrounded=true
+        elseif not ctx.floorGrounded then ctx.floorZ=p.z end
+    elseif not ctx.floorGrounded then ctx.floorZ=p.z end
 end
 function M:AnchorHUD(ctx,p)
     local reference=WorldFrame or UIParent
@@ -268,10 +287,12 @@ function M:UpdateHUD(elapsed,pose)
     if ctx.frame:GetWidth()~=v.width then ctx.frame:SetWidth(v.width) end
     if ctx.frame:GetHeight()~=v.height then ctx.frame:SetHeight(v.height) end
     self:UpdateHUDCamera(elapsed,p);self:AnchorHUD(ctx,p);ctx.frame:Show()
+    self:UpdateHUDFloor(ctx,p,elapsed)
     local q=ctx.wallQuery
+    local floorZ=ctx.floorZ
     if refresh and (not q or q.space~=p.space or (q.x-p.x)^2+(q.y-p.y)^2>100 or q.range~=zMapDB.hudRange or
-        p.z and (not q.z or abs(q.z-p.z)>3) or not p.z and q.z) then
-        if not q or q.space~=p.space or p.z and q.z and abs(q.z-p.z)>3 then ctx.walls={} end
+        floorZ and (not q.z or abs(q.z-floorZ)>3) or not floorZ and q.z) then
+        if not q or q.space~=p.space or floorZ and q.z and abs(q.z-floorZ)>3 then ctx.walls={} end
         self:StartHUDWallQuery()
     end
     if refresh then
@@ -297,6 +318,9 @@ function M:InitializeHUD()
     local center=tonumber(zMapDB.hudCenterY)
     zMapDB.hudCenterY=finite(center) and center>=.05 and center<=.95 and center or nil
     self.hudAlignPending=zMapDB.hudCenterY==nil
+    self.hudCameraBaselineNeeded=zMapDB.hudCameraVersion~=2
+    if self.hudCameraBaselineNeeded then zMapDB.hudCamera=nil end
+    zMapDB.hudCameraVersion=2
     zMapDB.hudCamera=validCamera(zMapDB.hudCamera) and zMapDB.hudCamera or nil
     self.hudCameraApplied=zMapDB.hudCamera;self.hudCameraSample=nil;self.hudCameraStable=0;self.hudCameraElapsed=0;self.hudCameraNeedsAlignment=false
 end
