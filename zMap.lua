@@ -572,7 +572,7 @@ SlashCmdList["ZMAP"]=function(message)
             " | "..(M.gatherShareReceived or 0).." new shared locations this session.")
         if M:PFQuestAvailable() then M:Print("pfQuest: "..(zMapDB.pfQuest and "on" or "off").." | "..(M.pfShown or 0).." map icons | "..(M.pfRoutesShown or 0).." route dots.") end
         if zMapDB.minimapOverride then M:Print("Minimap player: "..(M.miniUsesNativeArrow and "native model ("..(M.nativeArrowSource or "detected")..")" or "projected arrow")..".") end
-        if zMapDB.hudEnabled then M:Print("HUD: on | "..(M.hudContext and M.hudContext.wallShown or 0).." wall lines | quests "..(zMapDB.hudQuests and "on" or "off").." | "..(M.hudContext and M.hudContext.anchorMode or "waiting for position")..".") end
+        if zMapDB.hudEnabled then M:Print("HUD: on | "..(M.hudContext and M.hudContext.wallShown or 0).."/"..M.hudWallLimit.." wall lines | quests "..(zMapDB.hudQuests and "on" or "off").." | "..(M.hudContext and M.hudContext.anchorMode or "waiting for position")..".") end
     elseif message=="nodes reset" then M:ResetGatherVisibility()
     elseif message=="nodes" then M:ToggleGatherPanel()
     elseif message=="transit" then M:ToggleTransportPanel()

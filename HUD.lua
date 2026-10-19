@@ -1,5 +1,6 @@
 -- Optional click-through automap: native wall traces, nodes, heading up.
 local M=zMap
+M.hudWallLimit=1536
 local DATA=zMapHudData or {models={},placements={},grid={},cell=128}
 local floor,abs,min,max,sqrt=math.floor,math.abs,math.min,math.max,math.sqrt
 local alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-"
@@ -237,7 +238,7 @@ function M:RenderHUDWalls(ctx,angle)
         for _,wall in ipairs(ctx.walls) do
             local x,y=ctx:ToScreen(wall[1],wall[2]);local u,w=ctx:ToScreen(wall[3],wall[4])
             if ctx:HUDLine(used+1,x,y,u,w,zMapDB.hudOpacity) then used=used+1 end
-            if used>=512 then break end
+            if used>=self.hudWallLimit then break end
         end
         for i=used+1,table.getn(ctx.wallTextures) do ctx.wallTextures[i]:Hide() end
         ctx.wallShown=used
