@@ -13,3 +13,5 @@ The world map paintings, exploration overlays, minimap terrain/building renders 
 `Media/GatherVisuals33` contains code-generated geometric rings and circular progress swipes. These assets contain no copied game artwork.
 
 `Media/Transports14` contains independently drawn geometric boat and zeppelin glyphs. Native route/terminal coordinates are facts extracted from this installation's TaxiPathNode table. Seven timing seed sets were inspected in OctoBus; no OctoBus addon code or artwork is included. See SOURCE.md for attribution and timing limits.
+
+`HudData.lua` contains quantized wall traces derived locally from the installed client's WMO geometry and its native placements. The underlying game geometry remains the property of its respective owners. `Media/Hud/Line.tga` is a code-generated antialiased line containing no game artwork. No client model files or third-party extractor code are bundled.

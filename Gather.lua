@@ -162,11 +162,11 @@ function M:RenderGatherMarkers()
     self.gatherRenderEpoch=(self.gatherRenderEpoch or 0)+1
     local epoch=self.gatherRenderEpoch;local shown=0;local eligible=0;local liveShown=0;local loggedShown=0
     local function draw(node,live)
-        if self:GatherEnabled(node.definition) and node.space==self.view.space then
+        if self:GatherEnabled(node.definition) and node.space==self.view.space and (not self.GatherNodeVisible or self:GatherNodeVisible(node)) then
             local sx,sy=self:ToScreen(node.x,node.y)
             if sx>=10 and sy>=10 and sx<=self.view.width-10 and sy<=self.view.height-10 then
                 eligible=eligible+1
-                if shown<512 then
+                if shown<(self.gatherMarkerLimit or 512) then
                     local id=node.location and node.location.id or node.id or "live:"..node.guid
                     local marker=self.gatherMarkers[id]
                     if not marker then marker=table.remove(self.gatherMarkerFree) or self:MakeGatherMarker();self.gatherMarkers[id]=marker end
@@ -184,7 +184,7 @@ function M:RenderGatherMarkers()
                 end
             end
         end
-        return shown<512
+        return shown<(self.gatherMarkerLimit or 512)
     end
     -- Native observations have priority over history when the display is full.
     for _,node in ipairs(self.gatherNodes) do

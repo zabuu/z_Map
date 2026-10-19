@@ -3,6 +3,7 @@ local WHITE="Interface\\Buttons\\WHITE8X8"
 local min,max,abs=math.min,math.max,math.abs
 BINDING_HEADER_ZSUITE=BINDING_HEADER_ZSUITE or "zSuite"
 BINDING_NAME_ZMAP_TOGGLE="Toggle zMap"
+BINDING_NAME_ZMAP_HUD="Toggle zMap HUD"
 local defaults={replace=true,style="hybrid",interiors="auto",floorArt=true,follow=false,reopen="last",width=1000,height=690,pins={}}
 local classColors={
     WARRIOR={r=.78,g=.61,b=.43},MAGE={r=.41,g=.8,b=.94},ROGUE={r=1,g=.96,b=.41},
@@ -214,15 +215,31 @@ function M:SamplePlayer(resetMap)
         self.mapChanged=false
         file=GetMapInfo(); selected=file and self.byFile[string.lower(file)]
     end
+    if not selected and IsIndoors and IsIndoors() and GetRealZoneText and self.player and self.player.zone and
+        GetRealZoneText()==self.player.zone.name then selected=self.player.zone end
     self.sampleZone=selected
     local x,y=GetPlayerMapPosition("player")
+    local nativeValid=positionNumber(x) and positionNumber(y) and (x~=0 or y~=0)
+    local worldX,worldY,worldZ
+    if selected and type(zAPI)=="function" and (not nativeValid or zMapDB.hudEnabled) then
+        local ok,px,py,pz=pcall(zAPI,"unitPosition","player")
+        if ok and positionNumber(px) and positionNumber(py) and positionNumber(pz) then
+            local origin=self.data.origins[selected.map]
+            worldX=(origin and origin[1] or 0)-py;worldY=(origin and origin[2] or 0)-px;worldZ=pz
+        end
+    end
     self:SampleGroup(selected)
-    if not selected or not x or not y or (x==0 and y==0) then
+    if not selected or not nativeValid and not worldX then
         self.player=nil; self:RenderMarkers(); return
     end
-    local wx,wy=self:ZonePoint(selected,x,y)
+    local wx,wy=worldX,worldY
+    if nativeValid then
+        wx,wy=self:ZonePoint(selected,x,y)
+        if worldX and (abs(worldX-wx)>8 or abs(worldY-wy)>8) then worldZ=nil end
+    end
     self.player=self.player or {}
     self.player.x=wx; self.player.y=wy; self.player.space=selected.space; self.player.zone=selected
+    self.player.z=worldZ
     if zMapDB.follow and not self.drag and not self.animation then
         if selected.space~="world" then self.focus=selected end
         self.view.space=selected.space; self.view.x=wx; self.view.y=wy; self.dirty=true
@@ -520,6 +537,7 @@ function M:Initialize()
     self:InstallToggle()
     self:InitializePFQuest()
     self:InitializeMinimap()
+    self:InitializeHUD()
     self:Print("Loaded. Press M or type /zmap. Search includes custom zones and instance maps.")
 end
 SLASH_ZMAP1="/zmap"
@@ -544,12 +562,15 @@ SlashCmdList["ZMAP"]=function(message)
             " | "..(M.gatherShareReceived or 0).." new shared locations this session.")
         if M:PFQuestAvailable() then M:Print("pfQuest: "..(zMapDB.pfQuest and "on" or "off").." | "..(M.pfShown or 0).." map icons | "..(M.pfRoutesShown or 0).." route dots.") end
         if zMapDB.minimapOverride then M:Print("Minimap player: "..(M.miniUsesNativeArrow and "native model ("..(M.nativeArrowSource or "detected")..")" or "projected arrow")..".") end
+        if zMapDB.hudEnabled then M:Print("HUD: on | "..(M.hudContext and M.hudContext.wallShown or 0).." wall lines | quests "..(zMapDB.hudQuests and "on" or "off")..".") end
     elseif message=="nodes reset" then M:ResetGatherVisibility()
     elseif message=="nodes" then M:ToggleGatherPanel()
     elseif message=="transit" then M:ToggleTransportPanel()
     elseif message=="settings" then M:ToggleSettingsPanel()
+    elseif message=="hud" then M:SetHUD(not zMapDB.hudEnabled)
+    elseif message=="hud quests" then zMapDB.hudQuests=not zMapDB.hudQuests;M:RefreshSettingsPanel();M:Print("HUD quests: "..(zMapDB.hudQuests and "on" or "off")..".")
     elseif message=="help" then
-        M:Print("/zmap, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
+        M:Print("/zmap, /zmap hud, /zmap hud quests, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
     else M:Toggle() end
 end
 local events=CreateFrame("Frame")

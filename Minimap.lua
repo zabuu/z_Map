@@ -83,6 +83,18 @@ function M:PlayerFacing()
     if value then self.playerFacing=value end
     return self.playerFacing
 end
+function M:RaiseMapPlayer(ctx)
+    local level=ctx.viewport:GetFrameLevel();local strata=ctx.viewport:GetFrameStrata()
+    for _,name in ipairs(layerNames) do
+        local layer=ctx.layers[name];local layerStrata=layer:GetFrameStrata()
+        level=math.max(level,layer:GetFrameLevel())
+        if (strataOrder[layerStrata] or 0)>(strataOrder[strata] or 0) then strata=layerStrata end
+    end
+    level=level+4
+    if ctx.playerMarker:GetFrameStrata()~=strata then ctx.playerMarker:SetFrameStrata(strata) end
+    if ctx.playerMarker:GetFrameLevel()~=level then ctx.playerMarker:SetFrameLevel(level) end
+    return level,strata
+end
 function M:UseNativeMinimapPlayer(enabled)
     local rotated=self:MinimapRotated()
     -- The ordinary 1.12 minimap is north up, like this atlas. Reuse its actual
@@ -94,19 +106,10 @@ function M:UseNativeMinimapPlayer(enabled)
     self.miniUsesNativeArrow=enabled and not rotated and arrow and arrow:GetAlpha()>0 or false
     local level,strata
     if enabled then
-        local ctx=self.miniContext
-        level=ctx.frame:GetFrameLevel();strata=ctx.frame:GetFrameStrata()
-        for _,name in ipairs(layerNames) do
-            local layer=ctx.layers[name];local layerStrata=layer:GetFrameStrata()
-            level=math.max(level,layer:GetFrameLevel())
-            if (strataOrder[layerStrata] or 0)>(strataOrder[strata] or 0) then strata=layerStrata end
-        end
         -- Leave room for marker children, live-node rims and quest highlights.
         -- Frame levels alone cannot put a native BACKGROUND model above LOW art.
-        level=level+4
-        if ctx.playerMarker:GetFrameStrata()~=strata then ctx.playerMarker:SetFrameStrata(strata) end
-        if ctx.playerMarker:GetFrameLevel()~=level then ctx.playerMarker:SetFrameLevel(level) end
-        if self.miniUsesNativeArrow then ctx.playerMarker:Hide() end
+        level,strata=self:RaiseMapPlayer(self.miniContext)
+        if self.miniUsesNativeArrow then self.miniContext.playerMarker:Hide() end
     end
     if self.miniUsesNativeArrow then
         local current=arrow:GetFrameLevel()
@@ -137,13 +140,15 @@ function M:UpdatePlayerArrow(texture)
 end
 function M:IsGatherVisible()
     return self.frame and self.frame:IsShown() or
-        zMapDB.minimapOverride and self.miniContext and self.miniContext.frame:IsShown()
+        zMapDB.minimapOverride and self.miniContext and self.miniContext.frame:IsShown() or
+        self.hudContext and self.hudContext.frame:IsShown()
 end
 local function hideTooltip(self,key,cache,marker)
     local current=rawget(self,key)
     if current and (not marker or current==marker) then self[key]=false;if cache then self[cache]=false end;GameTooltip:Hide() end
 end
 local function forward(script)
+    if script=="OnMouseWheel" and zMapDB.minimapOverride then M:ZoomAtlasMinimap(arg1);return end
     local handler=Minimap and Minimap:GetScript(script)
     if handler then
         local previous=this;this=Minimap
@@ -155,6 +160,7 @@ local function forward(script)
 end
 function M:CreateMinimapContext()
     local frame=CreateFrame("Frame",nil,Minimap);frame:SetAllPoints(Minimap)
+    frame:EnableMouseWheel(true)
     frame:SetFrameLevel(Minimap:GetFrameLevel()+1)
     frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"});frame:SetBackdropColor(.075,.12,.15,1)
     local ctx=setmetatable({frame=frame,viewport=frame,view={x=0,y=0,width=140,height=140,scale=1,space="world"},
@@ -214,8 +220,24 @@ function M:MinimapSpan()
     local zoom=self:MinimapZoom()
     local inside=IsIndoors and IsIndoors()
     local a,b=tonumber(self:ReadMinimapCVar("minimapInsideZoom")),tonumber(self:ReadMinimapCVar("minimapZoom"))
-    if a and b and a~=b then inside=zoom==a end
-    return (inside and indoor or outdoor)[zoom+1]
+    if not IsIndoors and a and b and a~=b then inside=zoom==a end
+    return (inside and indoor or outdoor)[zoom+1]*1.3^(zoom==0 and (zMapDB.minimapExtraZoom or 0) or 0)
+end
+function M:ZoomAtlasMinimap(delta)
+    if not Minimap or not Minimap.SetZoom or not delta or delta==0 then return end
+    local zoom=self:MinimapZoom();local extra=zMapDB.minimapExtraZoom or 0
+    if delta>0 then
+        if zoom==0 and extra>0 then extra=extra-1 else Minimap:SetZoom(math.min(5,zoom+1));extra=0 end
+    elseif zoom==0 then extra=math.min(2,extra+1)
+    else Minimap:SetZoom(zoom-1);extra=0 end
+    zMapDB.minimapExtraZoom=extra;self:UpdateMinimapZoomButtons(true)
+end
+function M:UpdateMinimapZoomButtons(enabled)
+    local zoom=self:MinimapZoom();local extra=enabled and (zMapDB.minimapExtraZoom or 0) or 0
+    for _,item in ipairs({{MinimapZoomIn,zoom<5 or extra>0},{MinimapZoomOut,zoom>0 or enabled and extra<2}}) do
+        local button=item[1]
+        if button then if item[2] then button:Enable() else button:Disable() end end
+    end
 end
 function M:RaiseMinimapWidgets(enabled)
     if enabled and self.miniWidgetLevels then return end
@@ -236,10 +258,11 @@ function M:HideAtlasMinimap()
     if self.miniContext and self.miniContext.frame:IsShown() then self.miniContext.frame:Hide() end
     self:UseNativeMinimapPlayer(false)
     self:RaiseMinimapWidgets(false)
+    if self.miniZoomOwned then self:UpdateMinimapZoomButtons(false);self.miniZoomOwned=nil end
 end
 function M:SetAtlasMinimap(enabled)
     zMapDB.minimapOverride=enabled==true
-    if not enabled then self:HideAtlasMinimap();if not self.frame or not self.frame:IsShown() then self:ClearGather() end end
+    if not enabled then self:HideAtlasMinimap();if not self:IsGatherVisible() then self:ClearGather() end end
     self.miniRenderKey=nil;self:RefreshSettingsPanel()
 end
 function M:UpdateAtlasMinimap(elapsed)
@@ -264,6 +287,7 @@ function M:UpdateAtlasMinimap(elapsed)
     if not ctx.frame:IsShown() then ctx.frame:Show();changed=true end
     self:UseNativeMinimapPlayer(true)
     self:RaiseMinimapWidgets(true)
+    self:UpdateMinimapZoomButtons(true);self.miniZoomOwned=true
     if not large then self:UpdateGather(elapsed) end
     if changed or ctx.pending then ctx:Render() else self:RenderMinimapMarkers(ctx) end
     ctx:UpdateGatherVisuals(elapsed)
@@ -271,6 +295,14 @@ end
 function M:InitializeMinimap()
     zMapDB.minimapOverride=zMapDB.minimapOverride==true
     if zMapDB.minimapStyle~="terrain" and zMapDB.minimapStyle~="painted" then zMapDB.minimapStyle="match" end
+    zMapDB.minimapExtraZoom=self.Clamp(math.floor(tonumber(zMapDB.minimapExtraZoom) or 0),0,2)
+    for _,direction in ipairs({"In","Out"}) do
+        local name="Minimap_Zoom"..direction;local previous=getglobal and getglobal(name);local delta=direction=="In" and 1 or -1
+        if type(previous)=="function" then setglobal(name,function()
+            if zMapDB.minimapOverride and self.miniContext and self.miniContext.frame:IsShown() then self:ZoomAtlasMinimap(delta)
+            else return previous() end
+        end) end
+    end
     self.miniWorld=false
     local driver=CreateFrame("Frame");self.minimapDriver=driver
     driver:RegisterEvent("PLAYER_ENTERING_WORLD");driver:RegisterEvent("PLAYER_LEAVING_WORLD")
@@ -291,6 +323,7 @@ function M:InitializeMinimap()
             local elapsed=miniElapsed;miniElapsed=0
             self:UpdateAtlasMinimap(elapsed);self:UpdatePFQuest(elapsed)
         end
+        self:UpdateHUD(dt)
         -- Repair ordering after rendering/integration updates, even on frames
         -- where the stationary atlas skips its slower texture/marker refresh.
         if self.miniContext and self.miniContext.frame:IsShown() then self:UseNativeMinimapPlayer(true) end
@@ -301,10 +334,14 @@ function M:RefreshSettingsPanel()
     self.minimapOption.label:SetText(zMapDB.minimapOverride and "Minimap: zMap" or "Minimap: Blizzard")
     self.minimapLookOption.label:SetText("Look: "..(zMapDB.minimapStyle=="match" and "same as map" or zMapDB.minimapStyle))
     self.pfQuestOption.label:SetText(not self:PFQuestAvailable() and "pfQuest: not loaded" or zMapDB.pfQuest and "pfQuest: on" or "pfQuest: off")
+    self.hudOption.label:SetText(zMapDB.hudEnabled and "HUD: on" or "HUD: off")
+    self.hudQuestOption.label:SetText(zMapDB.hudQuests and "HUD quests: on" or "HUD quests: off")
+    self.hudRangeOption.label:SetText("HUD range: "..zMapDB.hudRange.."y")
+    self.hudOpacityOption.label:SetText("Wall opacity: "..math.floor(zMapDB.hudOpacity*100+.5).."%")
 end
 function M:BuildSettingsUI(button,text,surface)
     local panel=CreateFrame("Frame",nil,self.frame);self.settingsPanel=panel
-    panel:SetWidth(340);panel:SetHeight(250);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
+    panel:SetWidth(340);panel:SetHeight(390);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
     panel:SetFrameLevel(self.frame:GetFrameLevel()+50);panel:EnableMouse(true);surface(panel)
     text(panel,"Map settings",12,-12,270,true)
     local close=button(panel,"X",24,function() panel:Hide() end);close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-8,-8)
@@ -319,6 +356,17 @@ function M:BuildSettingsUI(button,text,surface)
     self.pfQuestOption=button(panel,"",150,function() self:SetPFQuest(not zMapDB.pfQuest) end)
     self.pfQuestOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-174)
     text(panel,"Quest icons, tooltips, map links and active paths. Uses pfQuest's filters and route selection.",12,-208,316)
+    self.hudOption=button(panel,"",150,function() self:SetHUD(not zMapDB.hudEnabled) end)
+    self.hudOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-252)
+    self.hudQuestOption=button(panel,"",150,function() zMapDB.hudQuests=not zMapDB.hudQuests;self:RefreshSettingsPanel() end)
+    self.hudQuestOption:SetPoint("LEFT",self.hudOption,"RIGHT",8,0)
+    self.hudRangeOption=button(panel,"",150,function()
+        local ranges={[120]=180,[180]=240,[240]=360,[360]=120};zMapDB.hudRange=ranges[zMapDB.hudRange] or 240;self:RefreshSettingsPanel()
+    end);self.hudRangeOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-286)
+    self.hudOpacityOption=button(panel,"",150,function()
+        local opacity=zMapDB.hudOpacity;zMapDB.hudOpacity=opacity<.3 and .35 or opacity<.45 and .5 or .2;self:RefreshSettingsPanel()
+    end);self.hudOpacityOption:SetPoint("LEFT",self.hudRangeOption,"RIGHT",8,0)
+    text(panel,"Experimental HUD: walls and nodes, direction up. Click-through. Assign a key in Key Bindings.",12,-328,316)
     self:RefreshSettingsPanel();panel:Hide()
 end
 function M:ToggleSettingsPanel()

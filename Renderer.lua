@@ -96,6 +96,7 @@ function M:InteriorAlpha(zone)
     if zMapDB.interiors=="surface" then return 0 end
     if v.space~=zone.space or not self:Clip(zone.x,zone.y,zone.w,zone.h) then return 0 end
     local coverage=max(zone.w*v.scale/v.width,zone.h*v.scale/v.height)
+    if zone.file=="CavernsOfTime" then return min(smooth((coverage-.8)/.7),smooth((v.scale-.55)/.55)) end
     return smooth((coverage-.20)/.20)
 end
 function M:DrawInterior(plan,zone,alpha,layer)
@@ -137,7 +138,9 @@ function M:RenderCaves()
     for _,cave in ipairs(visible) do
         local n=0
         for _,t in ipairs(cave.tiles) do if self:Clip(cave.x+t[2],cave.y+t[3],t[4],t[5]) then n=n+1 end end
-        if count+n<=64 then self:DrawInterior(cave,cave,alpha,"caves");count=count+n end
+        local caveAlpha=alpha
+        if cave.name=="Caverns of Time" and self.byFile.cavernsoftime then caveAlpha=min(alpha,self:InteriorAlpha(self.byFile.cavernsoftime)) end
+        if caveAlpha>.002 and count+n<=64 then self:DrawInterior(cave,cave,caveAlpha,"caves");count=count+n end
     end
 end
 function M:RenderInteriors()
@@ -299,6 +302,7 @@ function M:PlaceMarker(marker,x,y,space)
 end
 function M:RenderMarkers()
     if not self.playerMarker then return end
+    self:RaiseMapPlayer(self)
     self:RenderGatherMarkers()
     self:RenderTransports()
     self:RenderPFQuest()

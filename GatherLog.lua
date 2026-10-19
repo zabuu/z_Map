@@ -128,6 +128,7 @@ function M:VisitLoggedGatherLocations(visit)
     local v=self.view;local resources=self.gatherHistoryGrid[v.space]
     if not resources then return end
     local hw,hh=v.width/v.scale/2,v.height/v.scale/2
+    if self.hud then hw=math.sqrt(hw*hw+hh*hh);hh=hw end
     local x1,x2=math.floor((v.x-hw)/512),math.floor((v.x+hw)/512)
     local y1,y2=math.floor((v.y-hh)/512),math.floor((v.y+hh)/512)
     for key,grid in pairs(resources) do

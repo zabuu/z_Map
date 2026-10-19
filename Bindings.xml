@@ -2,4 +2,7 @@
     <Binding name="ZMAP_TOGGLE" header="ZSUITE">
         zMap:Toggle()
     </Binding>
+    <Binding name="ZMAP_HUD" header="ZSUITE">
+        zMap:SetHUD(not zMapDB.hudEnabled)
+    </Binding>
 </Bindings>

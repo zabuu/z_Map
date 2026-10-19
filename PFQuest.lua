@@ -163,7 +163,8 @@ function M:UpdatePFQuest(elapsed)
     end
     local large=self.frame and self.frame:IsShown()
     local mini=self.miniContext and self.miniContext.frame:IsShown()
-    if not large and not mini then return end
+    local hud=zMapDB.hudQuests and self.hudContext and self.hudContext.frame:IsShown()
+    if not large and not mini and not hud then return end
     local now=GetTime and GetTime() or 0
     if self.pfIndexRevision~=self.pfRevision and now>=(self.pfQuietUntil or 0) then
         if self.pfBuildingRevision~=self.pfRevision then
@@ -207,6 +208,10 @@ function M:RenderPFQuest()
     local v=self.view
     self:SetLayer("quests",1);self:SetLayer("questRoutes",1)
     local left,top=self:ToWorld(10,10);local right,bottom=self:ToWorld(v.width-10,v.height-10)
+    if self.hud then
+        local radius=math.sqrt(v.width*v.width+v.height*v.height)/(v.scale*2)
+        left=v.x-radius;right=v.x+radius;top=v.y-radius;bottom=v.y+radius
+    end
     local ctrl=IsControlKeyDown() and MouseIsOver and MouseIsOver(self.viewport)
     local cache=rawget(self,"pfQuery")
     if not cache or cache.revision~=M.pfIndexRevision or cache.space~=v.space or cache.left~=left or cache.top~=top or
