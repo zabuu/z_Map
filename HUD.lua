@@ -20,26 +20,26 @@ function M:HUDToWorld(x,y)
 end
 function M:HUDVisibility(x,y)
     local v=self.view
-    local radius=sqrt(((x-v.width/2)/(v.width/2-10))^2+((y-v.height/2)/(v.height/2-10))^2)
-    return self.Clamp((1-radius)/.3,0,1)
+    local radius=max(1,min(v.width,v.height)/2-10)
+    local distance=sqrt((x-v.width/2)^2+(y-v.height/2)^2)/radius
+    return self.Clamp((1-distance)/.3,0,1)
 end
-local function clipEdge(p,q,lo,hi)
-    if p==0 then if q<0 then return end else
-        local f=q/p;if p<0 then lo=max(lo,f) else hi=min(hi,f) end
-    end
-    if lo<=hi then return lo,hi end
-end
-local function clipLine(x,y,u,v,w,h)
-    local dx,dy=u-x,v-y
-    local lo,hi=clipEdge(-dx,x-4,0,1);if not lo then return end
-    lo,hi=clipEdge(dx,w-4-x,lo,hi);if not lo then return end
-    lo,hi=clipEdge(-dy,y-4,lo,hi);if not lo then return end
-    lo,hi=clipEdge(dy,h-4-y,lo,hi);if not lo then return end
+local function clipCircle(x,y,u,v,cx,cy,radius)
+    local dx,dy=u-x,v-y;local ox,oy=x-cx,y-cy
+    local a=dx*dx+dy*dy
+    if a<.000001 then return end
+    local b=ox*dx+oy*dy;local c=ox*ox+oy*oy-radius*radius
+    local discriminant=b*b-a*c
+    if discriminant<=0 then return end
+    local root=sqrt(discriminant)
+    local lo,hi=max(0,(-b-root)/a),min(1,(-b+root)/a)
+    if lo>=hi then return end
     return x+lo*dx,y+lo*dy,x+hi*dx,y+hi*dy
 end
 local function lineUV(c,s,length,x,y) return .5+(c*x+s*y)/length,.5+(-s*x+c*y)/(32*1.2) end
 function M:HUDLine(index,x,y,u,v,alpha)
-    x,y,u,v=clipLine(x,y,u,v,self.view.width,self.view.height)
+    local view=self.view;local radius=max(1,min(view.width,view.height)/2-10)
+    x,y,u,v=clipCircle(x,y,u,v,view.width/2,view.height/2,radius)
     if not x then return false end
     alpha=alpha*self:HUDVisibility((x+u)/2,(y+v)/2)
     local dx,dy=u-x,v-y;local length=sqrt(dx*dx+dy*dy)
@@ -147,9 +147,40 @@ function M:SetHUD(enabled)
     self:RefreshSettingsPanel()
 end
 local function finite(value) return type(value)=="number" and value==value and abs(value)<10000000 end
+local function validCamera(value)
+    return type(value)=="table" and finite(value.distance) and value.distance>=0 and value.distance<1000 and
+        finite(value.pitch) and abs(value.pitch)<=1 and finite(value.fov) and value.fov>0 and
+        finite(value.aspect) and value.aspect>0
+end
+local function sameCamera(a,b)
+    return a and b and abs(a.distance-b.distance)<=max(.25,b.distance*.015) and
+        abs(a.pitch-b.pitch)<=.01 and abs(a.fov-b.fov)<=.01 and abs(a.aspect-b.aspect)<=.01
+end
 function M:AlignHUD()
     self.hudAlignPending=true
     self:SetHUD(true)
+end
+function M:UpdateHUDCamera(elapsed,p)
+    self.hudCameraElapsed=(self.hudCameraElapsed or 0)+elapsed
+    if self.hudCameraElapsed<.2 and not self.hudAlignPending then return end
+    local dt=self.hudCameraElapsed;self.hudCameraElapsed=0
+    if not p.rawX or type(zAPI)~="function" then return end
+    local ok,x,y,z,fx,fy,fz,rx,ry,rz,ux,uy,uz,fov,aspect=pcall(zAPI,"camera")
+    if not ok or not finite(x) or not finite(y) or not finite(z) or not finite(fx) or not finite(fy) or not finite(fz) then return end
+    local length=sqrt(fx*fx+fy*fy+fz*fz)
+    if length<.001 then return end
+    -- Translation and horizontal yaw do not change the vertical calibration.
+    local camera={distance=sqrt((x-p.rawX)^2+(y-p.rawY)^2+(z-p.rawZ)^2),pitch=fz/length,fov=fov,aspect=aspect}
+    if not validCamera(camera) then return end
+    if not sameCamera(camera,self.hudCameraSample) then
+        self.hudCameraSample=camera;self.hudCameraStable=0
+        self.hudCameraNeedsAlignment=not sameCamera(camera,self.hudCameraApplied)
+    else
+        self.hudCameraStable=(self.hudCameraStable or 0)+dt
+        if self.hudCameraStable>=.4 and self.hudCameraNeedsAlignment then
+            self.hudAlignPending=true;self.hudCameraNeedsAlignment=false
+        end
+    end
 end
 function M:AnchorHUD(ctx,p)
     local reference=WorldFrame or UIParent
@@ -163,9 +194,13 @@ function M:AnchorHUD(ctx,p)
             local bottom=reference:GetBottom() or 0
             if ok and finite(x) and finite(y) and finite(depth) and depth>0 and height>0 then
                 local fraction=(y-bottom)/height
-                if fraction>=.05 and fraction<=.95 then zMapDB.hudCenterY=fraction end
+                if fraction>=.05 and fraction<=.95 then
+                    zMapDB.hudCenterY=fraction
+                    if self.hudCameraSample then zMapDB.hudCamera=self.hudCameraSample end
+                end
             end
         end
+        self.hudCameraApplied=self.hudCameraSample;self.hudCameraNeedsAlignment=false
     end
     local fraction=zMapDB.hudCenterY or .43
     local worldScale,frameScale=reference:GetEffectiveScale(),ctx.frame:GetEffectiveScale()
@@ -208,13 +243,14 @@ function M:UpdateHUD(elapsed,pose)
     local p=pose or self:ReadFollowPlayer()
     if not p then if self.hudContext then self.hudContext.frame:Hide() end;return end
     local ctx=self.hudContext or self:CreateHUDContext();local v=ctx.view
-    v.width=min(640,UIParent:GetWidth()*.6);v.height=min(440,UIParent:GetHeight()*.55)
+    local diameter=min(640,UIParent:GetWidth()*.6,UIParent:GetHeight()*.8)
+    v.width=diameter;v.height=diameter
     v.x=p.x;v.y=p.y;v.space=p.space;v.scale=v.width/(zMapDB.hudRange*2)
     ctx.player=p;ctx.gatherNodes=self.gatherNodes;ctx.serial=ctx.serial+1
     local angle=self:PlayerFacing() or 0;ctx.cos=math.cos(angle);ctx.sin=math.sin(angle)
     if ctx.frame:GetWidth()~=v.width then ctx.frame:SetWidth(v.width) end
     if ctx.frame:GetHeight()~=v.height then ctx.frame:SetHeight(v.height) end
-    self:AnchorHUD(ctx,p);ctx.frame:Show()
+    self:UpdateHUDCamera(elapsed,p);self:AnchorHUD(ctx,p);ctx.frame:Show()
     local q=ctx.wallQuery
     if refresh and (not q or q.space~=p.space or (q.x-p.x)^2+(q.y-p.y)^2>100 or q.range~=zMapDB.hudRange or
         p.z and (not q.z or abs(q.z-p.z)>3) or not p.z and q.z) then
@@ -237,6 +273,8 @@ function M:InitializeHUD()
     local center=tonumber(zMapDB.hudCenterY)
     zMapDB.hudCenterY=finite(center) and center>=.05 and center<=.95 and center or nil
     self.hudAlignPending=zMapDB.hudCenterY==nil
+    zMapDB.hudCamera=validCamera(zMapDB.hudCamera) and zMapDB.hudCamera or nil
+    self.hudCameraApplied=zMapDB.hudCamera;self.hudCameraSample=nil;self.hudCameraStable=0;self.hudCameraElapsed=0;self.hudCameraNeedsAlignment=false
 end
 function M:InstallHUDBinding()
     -- Apply the requested default once, after the client's bindings are loaded.
