@@ -149,23 +149,15 @@ function M:SetHUD(enabled)
     if not enabled and self.hudContext then self.hudContext.frame:Hide();self.hudContext.wallJob=nil end
     self:RefreshSettingsPanel()
 end
-local function finite(value) return type(value)=="number" and value==value and abs(value)<10000000 end
-function M:AnchorHUD(ctx,p)
+function M:AnchorHUD(ctx)
     local w,h=UIParent:GetWidth(),UIParent:GetHeight()
-    local x,y,mode=w/2,h*.28,"lower fallback"
-    if p.rawX and type(zAPI)=="function" then
-        local ok,sx,sy,depth=pcall(zAPI,"worldToScreen",p.rawX,p.rawY,p.rawZ)
-        if ok and finite(sx) and finite(sy) and finite(depth) and depth>0 then
-            local ui=UIParent:GetEffectiveScale();local world=WorldFrame and WorldFrame:GetEffectiveScale() or ui
-            local factor=ui>0 and world/ui or 1
-            sx=sx*factor;sy=sy*factor
-            if sx>=0 and sx<=1 and sy>=0 and sy<=1 then x=sx*w;y=sy*h;mode="player feet" end
-        end
-    end
-    if not ctx.anchorX or abs(ctx.anchorX-x)>.05 or abs(ctx.anchorY-y)>.05 then
+    -- The viewport stays fixed on screen. Only its world coordinates and
+    -- heading follow the player; camera motion must never move the overlay.
+    local x,y=w/2,h*.28
+    if ctx.anchorX~=x or ctx.anchorY~=y then
         ctx.frame:SetPoint("CENTER",UIParent,"BOTTOMLEFT",x,y);ctx.anchorX=x;ctx.anchorY=y
     end
-    ctx.anchorMode=mode
+    ctx.anchorMode="fixed screen anchor"
 end
 function M:RenderHUDWalls(ctx,angle)
     local v=ctx.view
@@ -203,7 +195,7 @@ function M:UpdateHUD(elapsed,pose)
     local angle=self:PlayerFacing() or 0;ctx.cos=math.cos(angle);ctx.sin=math.sin(angle)
     if ctx.frame:GetWidth()~=v.width then ctx.frame:SetWidth(v.width) end
     if ctx.frame:GetHeight()~=v.height then ctx.frame:SetHeight(v.height) end
-    self:AnchorHUD(ctx,p);ctx.frame:Show()
+    self:AnchorHUD(ctx);ctx.frame:Show()
     local q=ctx.wallQuery
     if refresh and (not q or q.space~=p.space or (q.x-p.x)^2+(q.y-p.y)^2>100 or q.range~=zMapDB.hudRange or
         p.z and (not q.z or abs(q.z-p.z)>3) or not p.z and q.z) then

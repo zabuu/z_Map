@@ -1,6 +1,6 @@
 -- All atlas art, terrain, pins and input share one physical-yard coordinate system.
 -- This module deliberately uses only the Lua 5.0 subset available in Vanilla.
-zMap = { version = "1.7.1", data = zMapData, interiors = zMapInteriors or {}, caves = zMapCaves or {}, interiorSpaces = zMapInteriorSpaces or {} }
+zMap = { version = "1.7.2", data = zMapData, interiors = zMapInteriors or {}, caves = zMapCaves or {}, interiorSpaces = zMapInteriorSpaces or {} }
 local M = zMap
 M.smoothFollow=true
 local min, max, abs, exp = math.min, math.max, math.abs, math.exp
