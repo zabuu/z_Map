@@ -470,7 +470,7 @@ function M:BuildSettingsUI(button,text,surface)
     self.hudOpacityOption=button(panel,"",150,function()
         local opacity=zMapDB.hudOpacity;zMapDB.hudOpacity=opacity<.3 and .35 or opacity<.45 and .5 or .2;self:RefreshSettingsPanel()
     end);self.hudOpacityOption:SetPoint("LEFT",self.hudRangeOption,"RIGHT",8,0)
-    text(panel,"Shift+M toggles the HUD. Feet alignment locks between camera zoom/tilt changes and refreshes after settling.",12,-328,316)
+    text(panel,"Shift+M toggles the HUD. Its dot stays fixed. Camera zoom realigns once after stopping; Center on player also realigns after tilt changes.",12,-328,316)
     self:BuildHUDPositionUI(button,text,surface);self:RefreshSettingsPanel();panel:Hide()
 end
 function M:ToggleSettingsPanel()

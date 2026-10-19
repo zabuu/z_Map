@@ -1,4 +1,4 @@
-# zMap 1.7.9
+# zMap 1.7.10
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -15,6 +15,8 @@ Alternatively, run `git clone https://github.com/zabuu/z_Map.git z_Map` from `In
 The map works without other addons or native extensions. Live gathering is optional and requires **zAPI 2.4 or later**, installed separately in the game directory; this repository does not install a DLL. Without it, the atlas and saved/shared locations still work. Artwork ownership and the source-code license are explained in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
+
+Version 1.7.10 adds a small **player dot at the HUD's fixed center** and removes delayed recentering caused by moving while rotating the camera. Camera movement, lag and collision no longer request alignment. Automatic alignment now follows a camera zoom command and waits until the camera and player stop moving; tilt changes use **Center on player** or `/zmap hud align`. Your saved center and offsets remain intact. **`/reload`** applies the update.
 
 Version 1.7.9 keeps **altitude changes from recentering the HUD**. Jumping, falling and vertical camera lag no longer count as camera zoom. Wall and resource height filtering uses the ground or floor beneath your feet when zAPI can detect it, so airborne movement does not select a higher floor. Real floor changes still update the geometry. Your saved center and offsets are preserved; **`/reload`** is sufficient.
 

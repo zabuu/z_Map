@@ -122,6 +122,10 @@ function M:CreateHUDContext()
     for i,name in ipairs({"walls","gather","questRoutes","quests","markers"}) do
         local layer=CreateFrame("Frame",nil,frame);layer:SetAllPoints(frame);layer:SetFrameLevel(frame:GetFrameLevel()+i);ctx.layers[name]=layer
     end
+    ctx.playerDot=ctx.layers.markers:CreateTexture(nil,"OVERLAY")
+    ctx.playerDot:SetTexture("Interface\\AddOns\\z_Map\\Media\\GroupCircle")
+    ctx.playerDot:SetWidth(7);ctx.playerDot:SetHeight(7)
+    ctx.playerDot:SetVertexColor(.85,1,.95,.95);ctx.playerDot:SetPoint("CENTER",frame,"CENTER",0,0)
     ctx.ToScreen=M.HUDToScreen;ctx.ToWorld=M.HUDToWorld
     ctx.UpdateGatherStatus=function() end
     ctx.GatherPresentation=function() return 13,.9,false end
@@ -144,7 +148,10 @@ function M:CreateHUDContext()
 end
 function M:SetHUD(enabled)
     zMapDB.hudEnabled=enabled==true
-    if not enabled and self.hudContext then self.hudContext.frame:Hide();self.hudContext.wallJob=nil end
+    if not enabled then
+        self.hudZoomPending=nil
+        if self.hudContext then self.hudContext.frame:Hide();self.hudContext.wallJob=nil end
+    end
     self:RefreshSettingsPanel()
 end
 local function finite(value) return type(value)=="number" and value==value and abs(value)<10000000 end
@@ -169,10 +176,29 @@ local function validCamera(value)
 end
 local function sameCamera(a,b)
     return a and b and abs(a.distance-b.distance)<=max(.25,b.distance*.015) and
-        abs(a.pitch-b.pitch)<=.01 and abs(a.fov-b.fov)<=.01 and abs(a.aspect-b.aspect)<=.01
+        abs(a.pitch-b.pitch)<=.01 and abs(a.fov-b.fov)<=.01 and abs(a.aspect-b.aspect)<=.01 and
+        abs(a.fx-b.fx)<=.01 and abs(a.fy-b.fy)<=.01 and
+        abs(a.px-b.px)<=.02 and abs(a.py-b.py)<=.02 and abs(a.pz-b.pz)<=.02
+end
+function M:QueueHUDZoomAlignment()
+    if not zMapDB or not zMapDB.hudEnabled then return end
+    self.hudZoomPending=true;self.hudCameraSample=nil;self.hudCameraStable=0;self.hudCameraElapsed=0
+end
+function M:InstallHUDCameraZoomHooks()
+    self.hudCameraZoomHooks=self.hudCameraZoomHooks or {}
+    for _,name in ipairs({"CameraZoomIn","CameraZoomOut"}) do
+        if not self.hudCameraZoomHooks[name] and type(_G[name])=="function" then
+            local previous=_G[name]
+            _G[name]=function(...)
+                self:QueueHUDZoomAlignment()
+                return previous(unpack(arg,1,arg.n))
+            end
+            self.hudCameraZoomHooks[name]=true
+        end
+    end
 end
 function M:AlignHUD()
-    self.hudAlignPending=true
+    self.hudAlignPending=true;self.hudZoomPending=nil
     self:SetHUD(true)
 end
 function M:CenterHUDOnPlayer()
@@ -180,28 +206,29 @@ function M:CenterHUDOnPlayer()
     self:AlignHUD()
 end
 function M:UpdateHUDCamera(elapsed,p)
+    -- A measured camera displacement can be movement lag or collision, not zoom.
+    -- Only an actual zoom command may schedule automatic feet realignment.
+    if not self.hudZoomPending or self.hudAlignPending then return end
     self.hudCameraElapsed=(self.hudCameraElapsed or 0)+elapsed
-    if self.hudCameraElapsed<.2 and not self.hudAlignPending then return end
+    if self.hudCameraElapsed<.2 then return end
     local dt=self.hudCameraElapsed;self.hudCameraElapsed=0
-    if not p.rawX or type(zAPI)~="function" then return end
+    if not p.rawX or type(zAPI)~="function" then self.hudZoomPending=nil;return end
     local ok,x,y,z,fx,fy,fz,rx,ry,rz,ux,uy,uz,fov,aspect=pcall(zAPI,"camera")
-    if not ok or not finite(x) or not finite(y) or not finite(z) or not finite(fx) or not finite(fy) or not finite(fz) then return end
-    local length=sqrt(fx*fx+fy*fy+fz*fz)
-    if length<.001 then return end
-    -- Vertical camera lag during jumps/falls must not be mistaken for zoom.
-    local camera={distance=sqrt((x-p.rawX)^2+(y-p.rawY)^2),pitch=fz/length,fov=fov,aspect=aspect}
-    if not validCamera(camera) then return end
-    if self.hudCameraBaselineNeeded and not self.hudAlignPending then
-        self.hudCameraApplied=camera;zMapDB.hudCamera=camera
+    if not ok or not finite(x) or not finite(y) or not finite(z) or not finite(fx) or not finite(fy) or not finite(fz) then
+        self.hudZoomPending=nil;return
     end
-    self.hudCameraBaselineNeeded=nil
+    local length=sqrt(fx*fx+fy*fy+fz*fz)
+    if length<.001 then self.hudZoomPending=nil;return end
+    -- Vertical camera lag during jumps/falls must not be mistaken for zoom.
+    local camera={distance=sqrt((x-p.rawX)^2+(y-p.rawY)^2),pitch=fz/length,fov=fov,aspect=aspect,
+        fx=fx/length,fy=fy/length,px=p.rawX,py=p.rawY,pz=p.rawZ}
+    if not validCamera(camera) then self.hudZoomPending=nil;return end
     if not sameCamera(camera,self.hudCameraSample) then
         self.hudCameraSample=camera;self.hudCameraStable=0
-        self.hudCameraNeedsAlignment=not sameCamera(camera,self.hudCameraApplied)
     else
         self.hudCameraStable=(self.hudCameraStable or 0)+dt
-        if self.hudCameraStable>=.4 and self.hudCameraNeedsAlignment then
-            self.hudAlignPending=true;self.hudCameraNeedsAlignment=false
+        if self.hudCameraStable>=.4 then
+            self.hudAlignPending=true;self.hudZoomPending=nil
         end
     end
 end
@@ -231,10 +258,8 @@ function M:AnchorHUD(ctx,p)
             -- Capture the actual foot point once; never interpret it as pixels.
             if ok and finite(x) and finite(y) and finite(depth) and depth>0 and x>=0 and x<=1 and y>=.05 and y<=.95 then
                 zMapDB.hudCenterX=x;zMapDB.hudCenterY=y
-                if self.hudCameraSample then zMapDB.hudCamera=self.hudCameraSample end
             end
         end
-        self.hudCameraApplied=self.hudCameraSample;self.hudCameraNeedsAlignment=false
     end
     local fractionX,fraction=zMapDB.hudCenterX or .5,zMapDB.hudCenterY or .43
     local worldScale,frameScale=reference:GetEffectiveScale(),ctx.frame:GetEffectiveScale()
@@ -318,13 +343,13 @@ function M:InitializeHUD()
     local center=tonumber(zMapDB.hudCenterY)
     zMapDB.hudCenterY=finite(center) and center>=.05 and center<=.95 and center or nil
     self.hudAlignPending=zMapDB.hudCenterY==nil
-    self.hudCameraBaselineNeeded=zMapDB.hudCameraVersion~=2
-    if self.hudCameraBaselineNeeded then zMapDB.hudCamera=nil end
-    zMapDB.hudCameraVersion=2
-    zMapDB.hudCamera=validCamera(zMapDB.hudCamera) and zMapDB.hudCamera or nil
-    self.hudCameraApplied=zMapDB.hudCamera;self.hudCameraSample=nil;self.hudCameraStable=0;self.hudCameraElapsed=0;self.hudCameraNeedsAlignment=false
+    -- Retire passive camera signatures without changing the saved screen point.
+    zMapDB.hudCamera=nil;zMapDB.hudCameraVersion=nil
+    self.hudZoomPending=nil;self.hudCameraSample=nil;self.hudCameraStable=0;self.hudCameraElapsed=0
+    self:InstallHUDCameraZoomHooks()
 end
 function M:InstallHUDBinding()
+    self:InstallHUDCameraZoomHooks()
     -- Apply the requested default once, after the client's bindings are loaded.
     -- Later edits in Key Bindings belong to the user and must survive reloads.
     if zMapDB.hudBindingInstalled or type(SetBinding)~="function" or type(SaveBindings)~="function" then return end
