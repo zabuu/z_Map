@@ -114,7 +114,6 @@ function M:StepHUDWallQuery()
 end
 function M:CreateHUDContext()
     local frame=CreateFrame("Frame",nil,UIParent);frame:SetFrameStrata("LOW");frame:EnableMouse(false)
-    frame:SetPoint("CENTER",UIParent,"BOTTOMLEFT",UIParent:GetWidth()/2,UIParent:GetHeight()*.28)
     local ctx=setmetatable({hud=true,frame=frame,viewport=frame,view={},layers={},wallTextures={},walls={},serial=0,
         gatherMarkers={},gatherMarkerFree={},gatherRenderEpoch=0,gatherMarkerLimit=128,
         hoveredGather=false,gatherTooltipMarker=false,cos=1,sin=0,smoothFollow=true}, {__index=M})
@@ -149,13 +148,35 @@ function M:SetHUD(enabled)
     if not enabled and self.hudContext then self.hudContext.frame:Hide();self.hudContext.wallJob=nil end
     self:RefreshSettingsPanel()
 end
-function M:AnchorHUD(ctx)
-    local w,h=UIParent:GetWidth(),UIParent:GetHeight()
-    -- The viewport stays fixed on screen. Only its world coordinates and
-    -- heading follow the player; camera motion must never move the overlay.
-    local x,y=w/2,h*.28
-    if ctx.anchorX~=x or ctx.anchorY~=y then
-        ctx.frame:SetPoint("CENTER",UIParent,"BOTTOMLEFT",x,y);ctx.anchorX=x;ctx.anchorY=y
+local function finite(value) return type(value)=="number" and value==value and abs(value)<10000000 end
+function M:AlignHUD()
+    self.hudAlignPending=true
+    self:SetHUD(true)
+end
+function M:AnchorHUD(ctx,p)
+    local reference=WorldFrame or UIParent
+    local height=reference:GetHeight()
+    if self.hudAlignPending then
+        self.hudAlignPending=nil
+        if p.rawX and type(zAPI)=="function" then
+            local ok,x,y,depth=pcall(zAPI,"worldToScreen",p.rawX,p.rawY,p.rawZ)
+            -- zAPI returns absolute WorldFrame UI coordinates, not fractions.
+            -- Capture only the vertical foot position, then freeze it.
+            local bottom=reference:GetBottom() or 0
+            if ok and finite(x) and finite(y) and finite(depth) and depth>0 and height>0 then
+                local fraction=(y-bottom)/height
+                if fraction>=.05 and fraction<=.95 then zMapDB.hudCenterY=fraction end
+            end
+        end
+    end
+    local fraction=zMapDB.hudCenterY or .43
+    local worldScale,frameScale=reference:GetEffectiveScale(),ctx.frame:GetEffectiveScale()
+    local offset=(fraction-.5)*height*(frameScale>0 and worldScale/frameScale or 1)
+    -- Anchor X directly to the viewport's CENTER. Convert only the vertical
+    -- offset into our scaled frame units; never recenter from camera motion.
+    if ctx.anchorReference~=reference or ctx.anchorOffsetY~=offset then
+        ctx.frame:ClearAllPoints();ctx.frame:SetPoint("CENTER",reference,"CENTER",0,offset)
+        ctx.anchorReference=reference;ctx.anchorOffsetY=offset
     end
     ctx.anchorMode="fixed screen anchor"
 end
@@ -195,7 +216,7 @@ function M:UpdateHUD(elapsed,pose)
     local angle=self:PlayerFacing() or 0;ctx.cos=math.cos(angle);ctx.sin=math.sin(angle)
     if ctx.frame:GetWidth()~=v.width then ctx.frame:SetWidth(v.width) end
     if ctx.frame:GetHeight()~=v.height then ctx.frame:SetHeight(v.height) end
-    self:AnchorHUD(ctx);ctx.frame:Show()
+    self:AnchorHUD(ctx,p);ctx.frame:Show()
     local q=ctx.wallQuery
     if refresh and (not q or q.space~=p.space or (q.x-p.x)^2+(q.y-p.y)^2>100 or q.range~=zMapDB.hudRange or
         p.z and (not q.z or abs(q.z-p.z)>3) or not p.z and q.z) then
@@ -216,6 +237,9 @@ function M:InitializeHUD()
     zMapDB.hudEnabled=zMapDB.hudEnabled==true;zMapDB.hudQuests=zMapDB.hudQuests==true
     zMapDB.hudRange=self.Clamp(tonumber(zMapDB.hudRange) or 240,120,360)
     zMapDB.hudOpacity=self.Clamp(tonumber(zMapDB.hudOpacity) or .35,.1,.6)
+    local center=tonumber(zMapDB.hudCenterY)
+    zMapDB.hudCenterY=finite(center) and center>=.05 and center<=.95 and center or nil
+    self.hudAlignPending=zMapDB.hudCenterY==nil
 end
 function M:InstallHUDBinding()
     -- Apply the requested default once, after the client's bindings are loaded.

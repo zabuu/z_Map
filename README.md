@@ -1,4 +1,4 @@
-# zMap 1.7.2
+# zMap 1.7.3
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -16,7 +16,7 @@ The map works without other addons or native extensions. Live gathering is optio
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
 
-Version 1.7.2 locks the HUD to a **fixed screen position**, horizontally centered and 28% up from the bottom. The player arrow stays at the overlay's center while walls and icons scroll and rotate beneath it, like the minimap. Camera pitch, zoom, jumping and character animations no longer move the overlay. This replaces the camera-projected feet anchor from 1.7.1. **`/reload` applies this update.**
+Version 1.7.3 centers the HUD directly on the **game viewport**, correcting horizontal offsets with scaled UIs. On its first display it measures your character's **feet height once** using zAPI, saves that vertical offset and holds it steady. The player arrow stays centered while the world scrolls and rotates beneath it. Camera movement never continuously recenters the overlay. After changing your camera angle, use **Align HUD to feet** in Settings or `/zmap hud align` to take a fresh measurement. If the large map is open, alignment happens once you close it. Without a valid projection the HUD keeps its saved height, or a 43%-from-bottom default. **`/reload` applies this update and performs the initial alignment.**
 
 Version 1.7.1 makes the large map's **Follow**, minimap following and HUD movement/turning update every rendered frame. Cached tiles, walls and existing icons move together while terrain loading, node scans and wall queries keep their previous limits. Follow keeps the current zoom. Movement uses current native positions; teleports snap and unavailable positions do not coast. **Shift+M toggles the HUD**, with a matching **HUD: on/off** button beside **Settings** on the main map. The shortcut is installed once; later changes in Key Bindings are preserved. HUD range, opacity and optional quests remain in Settings.
 
@@ -108,6 +108,7 @@ Group positions can span both continents when the native client reports them. zM
 | `/zmap settings` | Configure the optional atlas minimap and its look |
 | `/zmap hud` | Toggle the transparent, heading-up wall/node overlay |
 | `/zmap hud quests` | Toggle optional pfQuest icons on the HUD |
+| `/zmap hud align` | Measure feet height once and lock the HUD's vertical offset |
 | `/zmap blizzard` | Open the original map, including other addons' normal map integrations |
 | `/zmap replace` | Toggle which map M opens |
 | `/zmap player` | Center on the player each time zMap opens |
@@ -134,6 +135,6 @@ After a client content update, rebuild the generated assets to pick up changed b
 
 ## Validation
 
-All 220 offline regressions pass, covering map/marker/cave rendering, gathering history and item art, node timing/LOD, transport schedules/motion/sharing, marker caching, headings, the combined chat budget, Follow, the optional minimap, cross-continent group reports, HUD transforms/height/click-through, indoor positions, extra zoom, frame-rate following, fixed HUD anchoring, the HUD shortcut and pfQuest integration. The baseline uses a stock API stub without external addon dependencies. Integration tests load the installed pfQuest map and route modules and the installed pfUI chat wrapper. Tests include saved-state round trips, precise respawns and cave heights, native RGB and circular alpha, a 20,000-location history, duplicate suppression, delayed joins, malformed messages, throttling, failed-send backoff/retry, visibility recovery, sharing with the map closed, quest tooltips/clicks, route projection, player-arrow strata/level priority and independent viewports. The main map loads at most four textures per render; the miniature loads at most one, with independent caches. These checks do not measure live FPS, verify every minimap skin, confirm live cross-continent server reports, or confirm delivery through OctoWoW's live channel service.
+All 223 offline regressions pass, covering map/marker/cave rendering, gathering history and item art, node timing/LOD, transport schedules/motion/sharing, marker caching, headings, the combined chat budget, Follow, the optional minimap, cross-continent group reports, HUD transforms/height/click-through, indoor positions, extra zoom, frame-rate following, fixed HUD anchoring/calibration, the HUD shortcut and pfQuest integration. The baseline uses a stock API stub without external addon dependencies. Integration tests load the installed pfQuest map and route modules and the installed pfUI chat wrapper. Tests include saved-state round trips, precise respawns and cave heights, native RGB and circular alpha, a 20,000-location history, duplicate suppression, delayed joins, malformed messages, throttling, failed-send backoff/retry, visibility recovery, sharing with the map closed, quest tooltips/clicks, route projection, player-arrow strata/level priority and independent viewports. The main map loads at most four textures per render; the miniature loads at most one, with independent caches. These checks do not measure live FPS, verify every minimap skin, confirm live cross-continent server reports, or confirm delivery through OctoWoW's live channel service.
 
 The maintenance scripts and offline preview PNGs referenced in SOURCE.md belong to the local atlas-generation workspace (`../_zMapMaintenance`) and are not part of this runtime addon repository. Generated map assets, the complete addon Lua source and artwork notices are included. No account settings, saved node history or client archives are included.

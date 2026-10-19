@@ -577,9 +577,10 @@ SlashCmdList["ZMAP"]=function(message)
     elseif message=="transit" then M:ToggleTransportPanel()
     elseif message=="settings" then M:ToggleSettingsPanel()
     elseif message=="hud" then M:SetHUD(not zMapDB.hudEnabled)
+    elseif message=="hud align" then M:AlignHUD()
     elseif message=="hud quests" then zMapDB.hudQuests=not zMapDB.hudQuests;M:RefreshSettingsPanel();M:Print("HUD quests: "..(zMapDB.hudQuests and "on" or "off")..".")
     elseif message=="help" then
-        M:Print("/zmap, /zmap hud, /zmap hud quests, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
+        M:Print("/zmap, /zmap hud, /zmap hud align, /zmap hud quests, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
     else M:Toggle() end
 end
 local events=CreateFrame("Frame")
