@@ -114,9 +114,10 @@ function M:StepHUDWallQuery()
 end
 function M:CreateHUDContext()
     local frame=CreateFrame("Frame",nil,UIParent);frame:SetFrameStrata("LOW");frame:EnableMouse(false)
+    -- Explicit false keeps this context from inheriting the full-map arrow.
     local ctx=setmetatable({hud=true,frame=frame,viewport=frame,view={},layers={},wallTextures={},walls={},serial=0,
         gatherMarkers={},gatherMarkerFree={},gatherRenderEpoch=0,gatherMarkerLimit=128,
-        hoveredGather=false,gatherTooltipMarker=false,cos=1,sin=0,smoothFollow=true}, {__index=M})
+        hoveredGather=false,gatherTooltipMarker=false,cos=1,sin=0,smoothFollow=true,playerMarker=false}, {__index=M})
     for i,name in ipairs({"walls","gather","questRoutes","quests","markers"}) do
         local layer=CreateFrame("Frame",nil,frame);layer:SetAllPoints(frame);layer:SetFrameLevel(frame:GetFrameLevel()+i);ctx.layers[name]=layer
     end
@@ -137,9 +138,6 @@ function M:CreateHUDContext()
     ctx.RenderPFQuest=function(self)
         if zMapDB.hudQuests then M.RenderPFQuest(self) else self:HidePFQuest() end
     end
-    ctx.playerMarker=ctx:MakeMarker(1,1,1,16)
-    ctx.playerMarker.texture:SetTexture("Interface\\Minimap\\MinimapArrow");ctx.playerMarker.texture:SetTexCoord(0,1,0,1)
-    ctx.playerMarker:SetFrameLevel(ctx.layers.markers:GetFrameLevel()+4);ctx.playerMarker:SetAlpha(.8)
     frame:SetScript("OnHide",function() ctx:HidePFQuest() end)
     frame:Hide();self.hudContext=ctx;return ctx
 end
@@ -231,7 +229,6 @@ function M:UpdateHUD(elapsed,pose)
         end
     end
     self:RenderHUDWalls(ctx,angle);ctx:ReprojectFollowMarkers()
-    ctx:PlaceMarker(ctx.playerMarker,p.x,p.y,p.space)
 end
 function M:InitializeHUD()
     zMapDB.hudEnabled=zMapDB.hudEnabled==true;zMapDB.hudQuests=zMapDB.hudQuests==true

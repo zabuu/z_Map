@@ -1,4 +1,4 @@
-# zMap 1.7.3
+# zMap 1.7.4
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -16,7 +16,9 @@ The map works without other addons or native extensions. Live gathering is optio
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
 
-Version 1.7.3 centers the HUD directly on the **game viewport**, correcting horizontal offsets with scaled UIs. On its first display it measures your character's **feet height once** using zAPI, saves that vertical offset and holds it steady. The player arrow stays centered while the world scrolls and rotates beneath it. Camera movement never continuously recenters the overlay. After changing your camera angle, use **Align HUD to feet** in Settings or `/zmap hud align` to take a fresh measurement. If the large map is open, alignment happens once you close it. Without a valid projection the HUD keeps its saved height, or a 43%-from-bottom default. **`/reload` applies this update and performs the initial alignment.**
+Version 1.7.4 removes the player arrow from the **HUD only**, leaving walls and resource icons around your character. The minimap and full-map arrows remain visible. **`/reload` applies this update.**
+
+Version 1.7.3 centers the HUD directly on the **game viewport**, correcting horizontal offsets with scaled UIs. On its first display it measures your character's **feet height once** using zAPI, saves that vertical offset and holds it steady. The HUD center stays fixed while the world scrolls and rotates around it. Camera movement never continuously recenters the overlay. After changing your camera angle, use **Align HUD to feet** in Settings or `/zmap hud align` to take a fresh measurement. If the large map is open, alignment happens once you close it. Without a valid projection the HUD keeps its saved height, or a 43%-from-bottom default.
 
 Version 1.7.1 makes the large map's **Follow**, minimap following and HUD movement/turning update every rendered frame. Cached tiles, walls and existing icons move together while terrain loading, node scans and wall queries keep their previous limits. Follow keeps the current zoom. Movement uses current native positions; teleports snap and unavailable positions do not coast. **Shift+M toggles the HUD**, with a matching **HUD: on/off** button beside **Settings** on the main map. The shortcut is installed once; later changes in Key Bindings are preserved. HUD range, opacity and optional quests remain in Settings.
 
