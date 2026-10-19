@@ -175,6 +175,10 @@ function M:AlignHUD()
     self.hudAlignPending=true
     self:SetHUD(true)
 end
+function M:CenterHUDOnPlayer()
+    self:ResetHUDOffsets()
+    self:AlignHUD()
+end
 function M:UpdateHUDCamera(elapsed,p)
     self.hudCameraElapsed=(self.hudCameraElapsed or 0)+elapsed
     if self.hudCameraElapsed<.2 and not self.hudAlignPending then return end
@@ -204,24 +208,21 @@ function M:AnchorHUD(ctx,p)
         self.hudAlignPending=nil
         if p.rawX and type(zAPI)=="function" then
             local ok,x,y,depth=pcall(zAPI,"worldToScreen",p.rawX,p.rawY,p.rawZ)
-            -- zAPI returns absolute WorldFrame UI coordinates, not fractions.
-            -- Capture only the vertical foot position, then freeze it.
-            local bottom=reference:GetBottom() or 0
-            if ok and finite(x) and finite(y) and finite(depth) and depth>0 and height>0 then
-                local fraction=(y-bottom)/height
-                if fraction>=.05 and fraction<=.95 then
-                    zMapDB.hudCenterY=fraction
-                    if self.hudCameraSample then zMapDB.hudCamera=self.hudCameraSample end
-                end
+            -- The native API returns normalized bottom-left screen coordinates.
+            -- Capture the actual foot point once; never interpret it as pixels.
+            if ok and finite(x) and finite(y) and finite(depth) and depth>0 and x>=0 and x<=1 and y>=.05 and y<=.95 then
+                zMapDB.hudCenterX=x;zMapDB.hudCenterY=y
+                if self.hudCameraSample then zMapDB.hudCamera=self.hudCameraSample end
             end
         end
         self.hudCameraApplied=self.hudCameraSample;self.hudCameraNeedsAlignment=false
     end
-    local fraction=zMapDB.hudCenterY or .43
+    local fractionX,fraction=zMapDB.hudCenterX or .5,zMapDB.hudCenterY or .43
     local worldScale,frameScale=reference:GetEffectiveScale(),ctx.frame:GetEffectiveScale()
-    local offsetX=zMapDB.hudOffsetX or 0
-    local offset=(fraction-.5)*height*(frameScale>0 and worldScale/frameScale or 1)+(zMapDB.hudOffsetY or 0)
-    -- Convert the automatic vertical base to frame units, then apply the
+    local factor=frameScale>0 and worldScale/frameScale or 1
+    local offsetX=(fractionX-.5)*reference:GetWidth()*factor+(zMapDB.hudOffsetX or 0)
+    local offset=(fraction-.5)*height*factor+(zMapDB.hudOffsetY or 0)
+    -- Convert the automatic screen point to frame units, then apply the
     -- user's offsets on both axes without changing the world coordinates.
     if ctx.anchorReference~=reference or ctx.anchorOffsetX~=offsetX or ctx.anchorOffsetY~=offset then
         ctx.frame:ClearAllPoints();ctx.frame:SetPoint("CENTER",reference,"CENTER",offsetX,offset)
@@ -287,6 +288,12 @@ function M:InitializeHUD()
     zMapDB.hudRange=self.Clamp(tonumber(zMapDB.hudRange) or 240,120,360)
     zMapDB.hudOpacity=self.Clamp(tonumber(zMapDB.hudOpacity) or .35,.1,.6)
     zMapDB.hudOffsetX=offsetValue(zMapDB.hudOffsetX);zMapDB.hudOffsetY=offsetValue(zMapDB.hudOffsetY)
+    if zMapDB.hudProjectionVersion~=1 then
+        zMapDB.hudCenterX=nil;zMapDB.hudCenterY=nil;zMapDB.hudCamera=nil
+        zMapDB.hudProjectionVersion=1
+    end
+    local centerX=tonumber(zMapDB.hudCenterX)
+    zMapDB.hudCenterX=finite(centerX) and centerX>=0 and centerX<=1 and centerX or nil
     local center=tonumber(zMapDB.hudCenterY)
     zMapDB.hudCenterY=finite(center) and center>=.05 and center<=.95 and center or nil
     self.hudAlignPending=zMapDB.hudCenterY==nil
