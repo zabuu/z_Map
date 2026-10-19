@@ -286,6 +286,7 @@ function M:RenderPFQuestRoutes(mini,cfg)
                 if texture.pfX~=x or texture.pfY~=y then
                     texture:ClearAllPoints();texture:SetPoint("CENTER",self.viewport,"TOPLEFT",x,-y);texture.pfX=x;texture.pfY=y
                 end
+                if self.smoothFollow then texture.zMapRouteX=dot.x;texture.zMapRouteY=dot.y;texture.zMapRouteSpace=dot.space end
                 if texture.pfR~=dot.r or texture.pfG~=dot.g or texture.pfB~=dot.b or texture.pfA~=dot.a then
                     texture:SetVertexColor(dot.r,dot.g,dot.b,dot.a);texture.pfR=dot.r;texture.pfG=dot.g;texture.pfB=dot.b;texture.pfA=dot.a
                 end

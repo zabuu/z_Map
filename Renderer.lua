@@ -13,6 +13,20 @@ function M:SetLayer(name,alpha)
     layer.zAlpha=alpha
     if alpha>.002 then layer:SetAlpha(alpha);layer:Show() else layer:Hide() end
 end
+function M:PositionClippedTexture(t,sx,sy,sw,sh,ul,ur,vt,vb,alpha,u1,u2,v1,v2)
+    if not t.zx or abs(t.zx-sx)>.001 or abs(t.zy-sy)>.001 then
+        t:SetPoint("TOPLEFT",self.viewport,"TOPLEFT",sx,-sy);t.zx=sx;t.zy=sy
+    end
+    if t.zw~=sw then t:SetWidth(sw);t.zw=sw end
+    if t.zh~=sh then t:SetHeight(sh);t.zh=sh end
+    local du,dv=(u2 or 1)-(u1 or 0),(v2 or 1)-(v1 or 0)
+    local a,b,c,d=(u1 or 0)+ul*du,(u1 or 0)+ur*du,(v1 or 0)+vt*dv,(v1 or 0)+vb*dv
+    if t.zu1~=a or t.zu2~=b or t.zv1~=c or t.zv2~=d then
+        t:SetTexCoord(a,b,c,d);t.zu1=a;t.zu2=b;t.zv1=c;t.zv2=d
+    end
+    if t.zAlpha~=alpha then t:SetAlpha(alpha);t.zAlpha=alpha end
+    if not t.zShown then t:Show();t.zShown=true end
+end
 function M:Texture(poolName,path,x,y,w,h,alpha,u1,u2,v1,v2)
     if not alpha or alpha<=.002 then return true end
     local sx,sy,sw,sh,ul,ur,vt,vb=self:Clip(x,y,w,h)
@@ -29,18 +43,12 @@ function M:Texture(poolName,path,x,y,w,h,alpha,u1,u2,v1,v2)
     end
     if t.zSerial==self.serial then return true end
     t.zSerial=self.serial;pool.used=pool.used+1;pool.items[pool.used]=t
-    if not t.zx or abs(t.zx-sx)>.001 or abs(t.zy-sy)>.001 then
-        t:SetPoint("TOPLEFT",self.viewport,"TOPLEFT",sx,-sy);t.zx=sx;t.zy=sy
+    if self.smoothFollow then
+        local r=t.zMapRect or {};t.zMapRect=r
+        r[1]=x;r[2]=y;r[3]=w;r[4]=h;r[5]=alpha;r[6]=u1;r[7]=u2;r[8]=v1;r[9]=v2
+        t.zMotionReady=true
     end
-    if t.zw~=sw then t:SetWidth(sw);t.zw=sw end
-    if t.zh~=sh then t:SetHeight(sh);t.zh=sh end
-    local du,dv=(u2 or 1)-(u1 or 0),(v2 or 1)-(v1 or 0)
-    local a,b,c,d=(u1 or 0)+ul*du,(u1 or 0)+ur*du,(v1 or 0)+vt*dv,(v1 or 0)+vb*dv
-    if t.zu1~=a or t.zu2~=b or t.zv1~=c or t.zv2~=d then
-        t:SetTexCoord(a,b,c,d);t.zu1=a;t.zu2=b;t.zv1=c;t.zv2=d
-    end
-    if t.zAlpha~=alpha then t:SetAlpha(alpha);t.zAlpha=alpha end
-    if not t.zShown then t:Show();t.zShown=true end
+    self:PositionClippedTexture(t,sx,sy,sw,sh,ul,ur,vt,vb,alpha,u1,u2,v1,v2)
     self.stats.drawn=self.stats.drawn+1
     return true
 end
@@ -113,7 +121,7 @@ function M:DrawInterior(plan,zone,alpha,layer)
     pool=self.pools[layer]
     if not ready and pool then
         for i=start+1,pool.used do
-            local texture=pool.items[i];texture:Hide();texture.zShown=false
+            local texture=pool.items[i];texture:Hide();texture.zShown=false;texture.zMotionReady=false
         end
     end
 end
@@ -285,6 +293,12 @@ function M:Render()
 end
 
 function M:PlaceMarker(marker,x,y,space)
+    if self.smoothFollow then
+        local markers=rawget(self,"motionMarkers")
+        if not markers then markers={};self.motionMarkers=markers end
+        markers[marker]=true
+        marker.zMapWorldX=x;marker.zMapWorldY=y;marker.zMapWorldSpace=space
+    end
     if space~=self.view.space then if marker:IsShown() then marker:Hide() end;return end
     local sx,sy=self:ToScreen(x,y)
     if sx<10 or sy<10 or sx>self.view.width-10 or sy>self.view.height-10 then
@@ -299,6 +313,43 @@ function M:PlaceMarker(marker,x,y,space)
     end
     -- Consult the actual shown flag: other render paths can hide this frame.
     if not marker:IsShown() then marker:Show() end
+end
+function M:ReprojectFollowMarkers()
+    for marker in pairs(rawget(self,"motionMarkers") or {}) do
+        if marker~=self.playerMarker and marker:IsShown() then
+            self:PlaceMarker(marker,marker.zMapWorldX,marker.zMapWorldY,marker.zMapWorldSpace)
+            if marker.node then marker.sx=marker.zMapPointX;marker.sy=marker.zMapPointY end
+            if self.hud then
+                local fade=self:HUDVisibility(marker.zMapPointX,marker.zMapPointY)
+                local alpha=(marker.hudBaseAlpha or .9)*fade
+                if marker:GetAlpha()~=alpha then marker:SetAlpha(alpha) end
+            end
+        end
+    end
+    for _,list in ipairs({rawget(self,"pfRouteTextures") or {},rawget(self,"transportRouteDots") or {}}) do
+        for _,dot in ipairs(list) do
+            if dot:IsShown() and dot.zMapRouteX and dot.zMapRouteSpace==self.view.space then
+                local x,y=self:ToScreen(dot.zMapRouteX,dot.zMapRouteY)
+                if x<3 or y<3 or x>self.view.width-3 or y>self.view.height-3 then dot:Hide()
+                else
+                    dot:SetPoint("CENTER",self.viewport,"TOPLEFT",x,-y)
+                    if dot.pfX then dot.pfX=x;dot.pfY=y end
+                end
+            end
+        end
+    end
+end
+function M:ReprojectFollowTiles()
+    for _,pool in pairs(self.pools) do
+        for _,t in pairs(pool.byPath) do
+            local r=t.zMapRect
+            if r and t.zMotionReady then
+                local sx,sy,sw,sh,ul,ur,vt,vb=self:Clip(r[1],r[2],r[3],r[4])
+                if sx then self:PositionClippedTexture(t,sx,sy,sw,sh,ul,ur,vt,vb,r[5],r[6],r[7],r[8],r[9])
+                elseif t.zShown then t:Hide();t.zShown=false end
+            end
+        end
+    end
 end
 function M:RenderMarkers()
     if not self.playerMarker then return end

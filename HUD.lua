@@ -114,10 +114,10 @@ function M:StepHUDWallQuery()
 end
 function M:CreateHUDContext()
     local frame=CreateFrame("Frame",nil,UIParent);frame:SetFrameStrata("LOW");frame:EnableMouse(false)
-    frame:SetPoint("CENTER",UIParent,"CENTER",0,35)
+    frame:SetPoint("CENTER",UIParent,"BOTTOMLEFT",UIParent:GetWidth()/2,UIParent:GetHeight()*.28)
     local ctx=setmetatable({hud=true,frame=frame,viewport=frame,view={},layers={},wallTextures={},walls={},serial=0,
         gatherMarkers={},gatherMarkerFree={},gatherRenderEpoch=0,gatherMarkerLimit=128,
-        hoveredGather=false,gatherTooltipMarker=false,cos=1,sin=0}, {__index=M})
+        hoveredGather=false,gatherTooltipMarker=false,cos=1,sin=0,smoothFollow=true}, {__index=M})
     for i,name in ipairs({"walls","gather","questRoutes","quests","markers"}) do
         local layer=CreateFrame("Frame",nil,frame);layer:SetAllPoints(frame);layer:SetFrameLevel(frame:GetFrameLevel()+i);ctx.layers[name]=layer
     end
@@ -149,30 +149,26 @@ function M:SetHUD(enabled)
     if not enabled and self.hudContext then self.hudContext.frame:Hide();self.hudContext.wallJob=nil end
     self:RefreshSettingsPanel()
 end
-function M:UpdateHUD(elapsed)
-    if not zMapDB.hudEnabled or not self.miniWorld or self.frame and self.frame:IsShown() or WorldMapFrame and WorldMapFrame:IsShown() then
-        if self.hudContext then self.hudContext.frame:Hide() end;return
+local function finite(value) return type(value)=="number" and value==value and abs(value)<10000000 end
+function M:AnchorHUD(ctx,p)
+    local w,h=UIParent:GetWidth(),UIParent:GetHeight()
+    local x,y,mode=w/2,h*.28,"lower fallback"
+    if p.rawX and type(zAPI)=="function" then
+        local ok,sx,sy,depth=pcall(zAPI,"worldToScreen",p.rawX,p.rawY,p.rawZ)
+        if ok and finite(sx) and finite(sy) and finite(depth) and depth>0 then
+            local ui=UIParent:GetEffectiveScale();local world=WorldFrame and WorldFrame:GetEffectiveScale() or ui
+            local factor=ui>0 and world/ui or 1
+            sx=sx*factor;sy=sy*factor
+            if sx>=0 and sx<=1 and sy>=0 and sy<=1 then x=sx*w;y=sy*h;mode="player feet" end
+        end
     end
-    self.hudElapsed=(self.hudElapsed or 0)+elapsed
-    if self.hudElapsed<.05 then return end
-    local dt=self.hudElapsed;self.hudElapsed=0
-    local mini=self.miniContext and self.miniContext.frame:IsShown()
-    if not mini then self:SamplePlayer();self:UpdateGather(dt) end
-    local p=self.player
-    if not p then if self.hudContext then self.hudContext.frame:Hide() end;return end
-    local ctx=self.hudContext or self:CreateHUDContext();local v=ctx.view
-    v.width=min(640,UIParent:GetWidth()*.6);v.height=min(440,UIParent:GetHeight()*.55)
-    v.x=p.x;v.y=p.y;v.space=p.space;v.scale=v.width/(zMapDB.hudRange*2)
-    ctx.player=p;ctx.gatherNodes=self.gatherNodes;ctx.serial=ctx.serial+1
-    local angle=self:PlayerFacing() or 0;ctx.cos=math.cos(angle);ctx.sin=math.sin(angle)
-    ctx.frame:SetWidth(v.width);ctx.frame:SetHeight(v.height);ctx.frame:Show()
-    local q=ctx.wallQuery
-    if not q or q.space~=p.space or (q.x-p.x)^2+(q.y-p.y)^2>100 or q.range~=zMapDB.hudRange or
-        p.z and (not q.z or abs(q.z-p.z)>3) or not p.z and q.z then
-        if not q or q.space~=p.space or p.z and q.z and abs(q.z-p.z)>3 then ctx.walls={} end
-        self:StartHUDWallQuery()
+    if not ctx.anchorX or abs(ctx.anchorX-x)>.05 or abs(ctx.anchorY-y)>.05 then
+        ctx.frame:SetPoint("CENTER",UIParent,"BOTTOMLEFT",x,y);ctx.anchorX=x;ctx.anchorY=y
     end
-    self:StepHUDWallQuery()
+    ctx.anchorMode=mode
+end
+function M:RenderHUDWalls(ctx,angle)
+    local v=ctx.view
     local draw=ctx.wallDraw
     if not draw or draw.x~=v.x or draw.y~=v.y or abs(draw.angle-angle)>.001 or draw.walls~=ctx.walls or
         draw.width~=v.width or draw.height~=v.height or draw.scale~=v.scale or draw.opacity~=zMapDB.hudOpacity then
@@ -186,19 +182,55 @@ function M:UpdateHUD(elapsed)
         ctx.wallShown=used
         ctx.wallDraw={x=v.x,y=v.y,angle=angle,walls=ctx.walls,width=v.width,height=v.height,scale=v.scale,opacity=zMapDB.hudOpacity}
     end
-    ctx:RenderGatherMarkers();ctx:UpdateGatherVisuals(dt);ctx:RenderPFQuest()
-    for _,marker in pairs(ctx.gatherMarkers) do
-        if marker:IsShown() then marker:SetAlpha(.9*ctx:HUDVisibility(marker.sx,marker.sy)) end
+end
+function M:UpdateHUD(elapsed,pose)
+    if not zMapDB.hudEnabled or not self.miniWorld or self.frame and self.frame:IsShown() or WorldMapFrame and WorldMapFrame:IsShown() then
+        if self.hudContext then self.hudContext.frame:Hide() end;return
     end
-    for _,marker in ipairs(rawget(ctx,"pfMarkers") or {}) do
-        if marker:IsShown() then
-            marker:SetAlpha(marker:GetAlpha()*.85*ctx:HUDVisibility(marker.zMapPointX,marker.zMapPointY))
+    self.hudElapsed=(self.hudElapsed or 0)+elapsed
+    local refresh=self.hudElapsed>=.05
+    local dt=self.hudElapsed
+    if refresh then self.hudElapsed=0 end
+    if not refresh and not self.hudContext then return end
+    local mini=self.miniContext and self.miniContext.frame:IsShown()
+    if refresh and not mini then self:SamplePlayer();self:UpdateGather(dt) end
+    local p=pose or self:ReadFollowPlayer()
+    if not p then if self.hudContext then self.hudContext.frame:Hide() end;return end
+    local ctx=self.hudContext or self:CreateHUDContext();local v=ctx.view
+    v.width=min(640,UIParent:GetWidth()*.6);v.height=min(440,UIParent:GetHeight()*.55)
+    v.x=p.x;v.y=p.y;v.space=p.space;v.scale=v.width/(zMapDB.hudRange*2)
+    ctx.player=p;ctx.gatherNodes=self.gatherNodes;ctx.serial=ctx.serial+1
+    local angle=self:PlayerFacing() or 0;ctx.cos=math.cos(angle);ctx.sin=math.sin(angle)
+    if ctx.frame:GetWidth()~=v.width then ctx.frame:SetWidth(v.width) end
+    if ctx.frame:GetHeight()~=v.height then ctx.frame:SetHeight(v.height) end
+    self:AnchorHUD(ctx,p);ctx.frame:Show()
+    local q=ctx.wallQuery
+    if refresh and (not q or q.space~=p.space or (q.x-p.x)^2+(q.y-p.y)^2>100 or q.range~=zMapDB.hudRange or
+        p.z and (not q.z or abs(q.z-p.z)>3) or not p.z and q.z) then
+        if not q or q.space~=p.space or p.z and q.z and abs(q.z-p.z)>3 then ctx.walls={} end
+        self:StartHUDWallQuery()
+    end
+    if refresh then
+        self:StepHUDWallQuery()
+        ctx:RenderGatherMarkers();ctx:UpdateGatherVisuals(dt);ctx:RenderPFQuest()
+        for _,marker in ipairs(rawget(ctx,"pfMarkers") or {}) do
+            if marker:IsShown() then marker.hudBaseAlpha=marker:GetAlpha()*.85 end
         end
     end
+    self:RenderHUDWalls(ctx,angle);ctx:ReprojectFollowMarkers()
     ctx:PlaceMarker(ctx.playerMarker,p.x,p.y,p.space)
 end
 function M:InitializeHUD()
     zMapDB.hudEnabled=zMapDB.hudEnabled==true;zMapDB.hudQuests=zMapDB.hudQuests==true
     zMapDB.hudRange=self.Clamp(tonumber(zMapDB.hudRange) or 240,120,360)
     zMapDB.hudOpacity=self.Clamp(tonumber(zMapDB.hudOpacity) or .35,.1,.6)
+end
+function M:InstallHUDBinding()
+    -- Apply the requested default once, after the client's bindings are loaded.
+    -- Later edits in Key Bindings belong to the user and must survive reloads.
+    if zMapDB.hudBindingInstalled or type(SetBinding)~="function" or type(SaveBindings)~="function" then return end
+    if SetBinding("SHIFT-M","ZMAP_HUD") then
+        SaveBindings(GetCurrentBindingSet and GetCurrentBindingSet() or 1)
+        zMapDB.hudBindingInstalled=true
+    end
 end

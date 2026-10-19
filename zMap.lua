@@ -296,7 +296,14 @@ function M:BuildUI()
     text(f,"|cff59d9c5z|rMap",14,-13,70,true)
     self.settingsButton=button(f,"Settings",75,function() self:ToggleSettingsPanel() end)
     self.settingsButton:SetPoint("TOPLEFT",f,"TOPLEFT",82,-8)
-    self.areaLabel=text(f,"OctoWoW",175,-16,210)
+    self.hudButton=button(f,zMapDB.hudEnabled and "HUD: on" or "HUD: off",75,function() self:SetHUD(not zMapDB.hudEnabled) end)
+    self.hudButton:SetPoint("LEFT",self.settingsButton,"RIGHT",5,0)
+    self.hudButton:SetScript("OnEnter",function()
+        GameTooltip:SetOwner(self.hudButton,"ANCHOR_BOTTOM");GameTooltip:SetText("HUD automap",.9,.94,.98)
+        GameTooltip:AddLine("Shift+M toggles the overlay. Close the map to see it.",.7,.76,.82);GameTooltip:Show()
+    end)
+    self.hudButton:SetScript("OnLeave",function() GameTooltip:Hide() end)
+    self.areaLabel=text(f,"OctoWoW",248,-16,195)
     local close=button(f,"X",26,function() f:Hide() end)
     close:SetPoint("TOPRIGHT",f,"TOPRIGHT",-10,-9)
     local full=button(f,"[ ]",30,function() self:Maximize() end)
@@ -316,6 +323,7 @@ function M:BuildUI()
     end)
     self.layerButton:SetScript("OnLeave",function() GameTooltip:Hide() end)
     local title=CreateFrame("Frame",nil,f)
+    title:SetFrameLevel(f:GetFrameLevel())
     title:SetPoint("TOPLEFT",f,"TOPLEFT",5,-3); title:SetPoint("BOTTOMRIGHT",self.transportButton,"BOTTOMLEFT",-4,-4)
     title:EnableMouse(true); title:RegisterForDrag("LeftButton")
     title:SetScript("OnDragStart",function() if not self.fullscreen then f:StartMoving() end end)
@@ -467,6 +475,7 @@ function M:BuildUI()
             self.followButton.label:SetText(zMapDB.follow and "|cff59d9c5Follow|r" or "Follow")
         end
         self:UpdateGather(elapsed)
+        if zMapDB.follow and not self.drag and not self.animation then self:UpdateMainFollowMotion(self:ReadFollowPlayer()) end
     end)
     table.insert(UISpecialFrames,"zMapFrame")
     self:Resize(); f:Hide()
@@ -562,7 +571,7 @@ SlashCmdList["ZMAP"]=function(message)
             " | "..(M.gatherShareReceived or 0).." new shared locations this session.")
         if M:PFQuestAvailable() then M:Print("pfQuest: "..(zMapDB.pfQuest and "on" or "off").." | "..(M.pfShown or 0).." map icons | "..(M.pfRoutesShown or 0).." route dots.") end
         if zMapDB.minimapOverride then M:Print("Minimap player: "..(M.miniUsesNativeArrow and "native model ("..(M.nativeArrowSource or "detected")..")" or "projected arrow")..".") end
-        if zMapDB.hudEnabled then M:Print("HUD: on | "..(M.hudContext and M.hudContext.wallShown or 0).." wall lines | quests "..(zMapDB.hudQuests and "on" or "off")..".") end
+        if zMapDB.hudEnabled then M:Print("HUD: on | "..(M.hudContext and M.hudContext.wallShown or 0).." wall lines | quests "..(zMapDB.hudQuests and "on" or "off").." | "..(M.hudContext and M.hudContext.anchorMode or "waiting for position")..".") end
     elseif message=="nodes reset" then M:ResetGatherVisibility()
     elseif message=="nodes" then M:ToggleGatherPanel()
     elseif message=="transit" then M:ToggleTransportPanel()
@@ -581,6 +590,6 @@ events:SetScript("OnEvent",function()
     if event=="VARIABLES_LOADED" then M:Initialize() else
         M.mapChanged=true
         if M.ready then M:ClearGather() end
-        if event=="PLAYER_ENTERING_WORLD" and M.ready then M:InstallToggle() end
+        if event=="PLAYER_ENTERING_WORLD" and M.ready then M:InstallToggle();M:InstallHUDBinding() end
     end
 end)

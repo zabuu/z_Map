@@ -146,6 +146,9 @@ function M:TransportRouteSegment(x,y,a,b,kind,schematic)
             dot:SetWidth(2);dot:SetHeight(2);self.transportRouteDots[index]=dot
         end
         dot:ClearAllPoints();dot:SetPoint("CENTER",self.viewport,"TOPLEFT",sx+dx*t,-sy-dy*t)
+        if self.smoothFollow then
+            dot.zMapRouteX,dot.zMapRouteY=self:ToWorld(sx+dx*t,sy+dy*t);dot.zMapRouteSpace=self.view.space
+        end
         if kind=="zeppelin" then dot:SetVertexColor(.95,.71,.27,schematic and .34 or .52)
         else dot:SetVertexColor(.3,.76,.92,schematic and .34 or .52) end
         dot:Show();self.transportDotsUsed=index

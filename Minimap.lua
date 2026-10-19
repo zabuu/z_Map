@@ -164,7 +164,7 @@ function M:CreateMinimapContext()
     frame:SetFrameLevel(Minimap:GetFrameLevel()+1)
     frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"});frame:SetBackdropColor(.075,.12,.15,1)
     local ctx=setmetatable({frame=frame,viewport=frame,view={x=0,y=0,width=140,height=140,scale=1,space="world"},
-        layers={},pools={},grids=self.grids,gridSeen={},stats={},serial=0,loadLimit=1,focus=false,
+        layers={},pools={},grids=self.grids,gridSeen={},stats={},serial=0,loadLimit=1,focus=false,smoothFollow=true,
         groupMarkers={},pinMarkers={},gatherMarkers={},gatherMarkerFree={},gatherRenderEpoch=0,
         hoveredGather=false,gatherTooltipMarker=false,hoveredGroupMarker=false,groupTooltipMarker=false,hoveredTransport=false,
         transportDockMarkers={},transportVehicleMarkers={},transportVehicleByEntry={},transportRouteDots={},transportRouteView=false},
@@ -292,6 +292,54 @@ function M:UpdateAtlasMinimap(elapsed)
     if changed or ctx.pending then ctx:Render() else self:RenderMinimapMarkers(ctx) end
     ctx:UpdateGatherVisuals(elapsed)
 end
+local function finite(value) return type(value)=="number" and value==value and math.abs(value)<10000000 end
+function M:ReadFollowPlayer()
+    local p=self.player
+    if not p or not p.zone or self.mapChanged or not self.miniWorld or WorldMapFrame and WorldMapFrame:IsShown() then return end
+    local file=GetMapInfo()
+    if file and self.byFile[string.lower(file)]~=p.zone then return end
+    local x,y=GetPlayerMapPosition("player")
+    local valid=finite(x) and finite(y) and (x~=0 or y~=0)
+    local wx,wy,z,rx,ry,rz
+    if type(zAPI)=="function" then
+        local ok,a,b,c=pcall(zAPI,"unitPosition","player")
+        if ok and finite(a) and finite(b) and finite(c) then
+            local origin=self.data.origins[p.zone.map]
+            wx=(origin and origin[1] or 0)-b;wy=(origin and origin[2] or 0)-a
+            rx=a;ry=b;rz=c;z=c
+        end
+    end
+    if valid then
+        x,y=self:ZonePoint(p.zone,x,y)
+        if wx and (math.abs(wx-x)>8 or math.abs(wy-y)>8) then rx=nil;ry=nil;rz=nil;z=nil end
+        if rx then x=wx;y=wy end
+    elseif wx then x=wx;y=wy else return end
+    local pose=self.followPlayer or {};self.followPlayer=pose
+    pose.x=x;pose.y=y;pose.z=z or p.z;pose.space=p.space;pose.zone=p.zone
+    pose.rawX=rx;pose.rawY=ry;pose.rawZ=rz
+    return pose
+end
+function M:UpdateMinimapMotion(p)
+    local ctx=self.miniContext
+    if not ctx or not ctx.frame:IsShown() then return end
+    if not p then self:HideAtlasMinimap();return end
+    local v=ctx.view
+    if v.space~=p.space then return end
+    if v.x~=p.x or v.y~=p.y then
+        v.x=p.x;v.y=p.y;ctx:ReprojectFollowTiles();ctx:ReprojectFollowMarkers()
+    end
+    ctx.player=p
+    if not self.miniUsesNativeArrow then ctx:PlaceMarker(ctx.playerMarker,p.x,p.y,p.space) end
+end
+function M:UpdateMainFollowMotion(p)
+    if not zMapDB.follow or not self.frame or not self.frame:IsShown() or self.drag or self.animation or not p then return end
+    local v=self.view
+    if v.space~=p.space then return end
+    if v.x~=p.x or v.y~=p.y then
+        v.x=p.x;v.y=p.y;self:ReprojectFollowTiles();self:ReprojectFollowMarkers()
+    end
+    self:PlaceMarker(self.playerMarker,p.x,p.y,p.space)
+end
 function M:InitializeMinimap()
     zMapDB.minimapOverride=zMapDB.minimapOverride==true
     if zMapDB.minimapStyle~="terrain" and zMapDB.minimapStyle~="painted" then zMapDB.minimapStyle="match" end
@@ -323,18 +371,22 @@ function M:InitializeMinimap()
             local elapsed=miniElapsed;miniElapsed=0
             self:UpdateAtlasMinimap(elapsed);self:UpdatePFQuest(elapsed)
         end
-        self:UpdateHUD(dt)
+        local mini=self.miniContext and self.miniContext.frame:IsShown()
+        local hud=zMapDB.hudEnabled and not (self.frame and self.frame:IsShown())
+        local pose=(mini or hud) and self:ReadFollowPlayer()
+        if mini then self:UpdateMinimapMotion(pose) end
+        self:UpdateHUD(dt,pose)
         -- Repair ordering after rendering/integration updates, even on frames
         -- where the stationary atlas skips its slower texture/marker refresh.
         if self.miniContext and self.miniContext.frame:IsShown() then self:UseNativeMinimapPlayer(true) end
     end)
 end
 function M:RefreshSettingsPanel()
+    if self.hudButton then self.hudButton.label:SetText(zMapDB.hudEnabled and "HUD: on" or "HUD: off") end
     if not self.settingsPanel then return end
     self.minimapOption.label:SetText(zMapDB.minimapOverride and "Minimap: zMap" or "Minimap: Blizzard")
     self.minimapLookOption.label:SetText("Look: "..(zMapDB.minimapStyle=="match" and "same as map" or zMapDB.minimapStyle))
     self.pfQuestOption.label:SetText(not self:PFQuestAvailable() and "pfQuest: not loaded" or zMapDB.pfQuest and "pfQuest: on" or "pfQuest: off")
-    self.hudOption.label:SetText(zMapDB.hudEnabled and "HUD: on" or "HUD: off")
     self.hudQuestOption.label:SetText(zMapDB.hudQuests and "HUD quests: on" or "HUD quests: off")
     self.hudRangeOption.label:SetText("HUD range: "..zMapDB.hudRange.."y")
     self.hudOpacityOption.label:SetText("Wall opacity: "..math.floor(zMapDB.hudOpacity*100+.5).."%")
@@ -356,17 +408,15 @@ function M:BuildSettingsUI(button,text,surface)
     self.pfQuestOption=button(panel,"",150,function() self:SetPFQuest(not zMapDB.pfQuest) end)
     self.pfQuestOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-174)
     text(panel,"Quest icons, tooltips, map links and active paths. Uses pfQuest's filters and route selection.",12,-208,316)
-    self.hudOption=button(panel,"",150,function() self:SetHUD(not zMapDB.hudEnabled) end)
-    self.hudOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-252)
     self.hudQuestOption=button(panel,"",150,function() zMapDB.hudQuests=not zMapDB.hudQuests;self:RefreshSettingsPanel() end)
-    self.hudQuestOption:SetPoint("LEFT",self.hudOption,"RIGHT",8,0)
+    self.hudQuestOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-252)
     self.hudRangeOption=button(panel,"",150,function()
         local ranges={[120]=180,[180]=240,[240]=360,[360]=120};zMapDB.hudRange=ranges[zMapDB.hudRange] or 240;self:RefreshSettingsPanel()
     end);self.hudRangeOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-286)
     self.hudOpacityOption=button(panel,"",150,function()
         local opacity=zMapDB.hudOpacity;zMapDB.hudOpacity=opacity<.3 and .35 or opacity<.45 and .5 or .2;self:RefreshSettingsPanel()
     end);self.hudOpacityOption:SetPoint("LEFT",self.hudRangeOption,"RIGHT",8,0)
-    text(panel,"Experimental HUD: walls and nodes, direction up. Click-through. Assign a key in Key Bindings.",12,-328,316)
+    text(panel,"Experimental HUD: walls and nodes, direction up. Click-through. Toggle with Shift+M or the HUD button.",12,-328,316)
     self:RefreshSettingsPanel();panel:Hide()
 end
 function M:ToggleSettingsPanel()
