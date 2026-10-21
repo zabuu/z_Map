@@ -19,6 +19,7 @@ function M:InitializeGather()
     if type(zMapDB.gatherCategories)~="table" then zMapDB.gatherCategories={} end
     if zMapDB.gatherEnabled==nil then zMapDB.gatherEnabled=true end
     if zMapDB.gatherShowLogged==nil then zMapDB.gatherShowLogged=true end
+    zMapDB.gatherWorldIcons=zMapDB.gatherWorldIcons==true
     for category in pairs(labels) do
         if zMapDB.gatherCategories[category]==nil then zMapDB.gatherCategories[category]=category~="treasure" end
     end
@@ -37,6 +38,7 @@ function M:HideGatherTooltip(marker)
 end
 function M:ClearGather(status)
     if not self.gatherNodes then return end
+    self.gatherLiveAt=nil;self:ClearWorldGatherIcons()
     self:ResetGatherLogLive()
     self:ResetGatherTimingWatch()
     for i=table.getn(self.gatherNodes),1,-1 do self.gatherNodes[i]=nil end
@@ -87,6 +89,7 @@ function M:SampleGather()
             local node=self.gatherByGUID[guid] or {}
             if node.epoch~=epoch then
                 node.guid=guid;node.entry=entry;node.x=ox-y;node.y=oy-x;node.z=z;node.space=player.space
+                node.worldX=x;node.worldY=y
                 node.definition=definition;node.epoch=epoch
                 node.distance=math.sqrt((x-px)^2+(y-py)^2+(z-pz)^2);node.height=z-pz
                 node.location=nil;self:RememberGatherNode(node,player.zone.map,x,y,z)
@@ -96,6 +99,7 @@ function M:SampleGather()
     end
     for i=used+1,table.getn(self.gatherNodes) do self.gatherNodes[i]=nil end
     for guid,node in pairs(self.gatherByGUID) do if node.epoch~=epoch then self.gatherByGUID[guid]=nil end end
+    self.gatherLiveAt=GetTime and GetTime() or 0
     self:SampleGatherTimers(player.zone.map,px,py,pz)
     self.gatherStatus="Detected nearby: "..used;self:RenderGatherMarkers()
     if self.gatherPanel and self.gatherPanel:IsShown() then self:RefreshGatherPanel() end

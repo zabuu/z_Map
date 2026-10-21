@@ -141,7 +141,7 @@ end
 function M:IsGatherVisible()
     return self.frame and self.frame:IsShown() or
         zMapDB.minimapOverride and self.miniContext and self.miniContext.frame:IsShown() or
-        self.hudContext and self.hudContext.frame:IsShown()
+        self.hudContext and self.hudContext.frame:IsShown() or zMapDB.gatherWorldIcons and self.miniWorld
 end
 local function hideTooltip(self,key,cache,marker)
     local current=rawget(self,key)
@@ -376,6 +376,7 @@ function M:InitializeMinimap()
         local pose=(mini or hud) and self:ReadFollowPlayer()
         if mini then self:UpdateMinimapMotion(pose) end
         self:UpdateHUD(dt,pose)
+        self:UpdateWorldGatherIcons(dt)
         -- Repair ordering after rendering/integration updates, even on frames
         -- where the stationary atlas skips its slower texture/marker refresh.
         if self.miniContext and self.miniContext.frame:IsShown() then self:UseNativeMinimapPlayer(true) end
@@ -397,6 +398,7 @@ function M:RefreshHUDPositionPanel()
     end
     self.hudRangeOption.label:SetText("Range: "..zMapDB.hudRange.."y")
     self.hudOpacityOption.label:SetText("Wall opacity: "..math.floor(zMapDB.hudOpacity*100+.5).."%")
+    self.worldGatherOption.label:SetText("World node icons: "..(zMapDB.gatherWorldIcons and "on" or "off"))
     self.hudOffsetRefreshing=true
     for _,axis in ipairs({"X","Y"}) do
         local slider=self["hudOffset"..axis.."Slider"];local value=zMapDB["hudOffset"..axis] or 0
@@ -407,7 +409,7 @@ function M:RefreshHUDPositionPanel()
 end
 function M:BuildHUDPositionUI(button,text,surface)
     local panel=CreateFrame("Frame","zMapHUDSettings",UIParent);self.hudPositionPanel=panel;self.hudSettingsPanel=panel
-    panel:SetWidth(380);panel:SetHeight(552);panel:SetPoint("LEFT",UIParent,"LEFT",24,0)
+    panel:SetWidth(380);panel:SetHeight(586);panel:SetPoint("LEFT",UIParent,"LEFT",24,0)
     panel:SetFrameStrata("DIALOG");panel:EnableMouse(true);panel:SetMovable(true);surface(panel)
     if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
     panel:RegisterForDrag("LeftButton");panel:SetScript("OnDragStart",function() panel:StartMoving() end)
@@ -430,13 +432,15 @@ function M:BuildHUDPositionUI(button,text,surface)
     self.hudOpacityOption=button(panel,"",174,function()
         local opacity=zMapDB.hudOpacity;zMapDB.hudOpacity=opacity<.3 and .35 or opacity<.45 and .5 or .2;self:RefreshSettingsPanel()
     end);self.hudOpacityOption:SetPoint("LEFT",self.hudRangeOption,"RIGHT",8,0)
-    text(panel,"Players use class colors. Pets are orange. Targets are yellow, or red while in combat.",12,-188,356)
-    text(panel,"Position",12,-242,170,true)
+    self.worldGatherOption=button(panel,"",356,function() self:SetWorldGatherIcons(not zMapDB.gatherWorldIcons) end)
+    self.worldGatherOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-186)
+    text(panel,"Players use class colors. Pets are orange. Targets are yellow, or red while in combat.",12,-222,356)
+    text(panel,"Position",12,-276,170,true)
     self.hudAlignOption=button(panel,"Center on player",174,function() self:CenterHUDOnPlayer() end)
-    self.hudAlignOption:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-12,-236);self.hudOffsetReset=self.hudAlignOption
+    self.hudAlignOption:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-12,-270);self.hudOffsetReset=self.hudAlignOption
     for i,entry in ipairs({"X","Y"}) do
         local axis=entry
-        local top=280+(i-1)*78
+        local top=314+(i-1)*78
         local slider=CreateFrame("Slider",nil,panel);self["hudOffset"..axis.."Slider"]=slider
         slider:SetWidth(356);slider:SetHeight(18);slider:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-top-22)
         slider:SetOrientation("HORIZONTAL");slider:SetMinMaxValues(-self.hudOffsetLimit,self.hudOffsetLimit)
@@ -452,9 +456,9 @@ function M:BuildHUDPositionUI(button,text,surface)
         end)
         slider:SetScript("OnMouseWheel",function() self:SetHUDOffset(axis,slider:GetValue()+(arg1 or 0)) end)
     end
-    text(panel,"Shift+M toggles the HUD. Center on player clears offsets; Align to feet keeps them. Scroll over a slider for fine adjustments.",12,-442,356)
+    text(panel,"Shift+M toggles the HUD. World node icons use live Nodes filters. Center clears offsets; Align keeps them. Scroll sliders for fine adjustments.",12,-476,356)
     local align=button(panel,"Align to feet",174,function() self:AlignHUD() end)
-    align:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-512)
+    align:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-546)
     local back=button(panel,"Map settings",174,function() panel:Hide();self:ToggleSettingsPanel() end)
     back:SetPoint("LEFT",align,"RIGHT",8,0)
     table.insert(UISpecialFrames,"zMapHUDSettings");self:RefreshHUDPositionPanel();panel:Hide()
