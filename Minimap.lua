@@ -388,12 +388,15 @@ function M:RefreshSettingsPanel()
     self.minimapOption.label:SetText(zMapDB.minimapOverride and "Minimap: zMap" or "Minimap: Blizzard")
     self.minimapLookOption.label:SetText("Look: "..(zMapDB.minimapStyle=="match" and "same as map" or zMapDB.minimapStyle))
     self.pfQuestOption.label:SetText(not self:PFQuestAvailable() and "pfQuest: not loaded" or zMapDB.pfQuest and "pfQuest: on" or "pfQuest: off")
-    self.hudQuestOption.label:SetText(zMapDB.hudQuests and "HUD quests: on" or "HUD quests: off")
-    self.hudRangeOption.label:SetText("HUD range: "..zMapDB.hudRange.."y")
-    self.hudOpacityOption.label:SetText("Wall opacity: "..math.floor(zMapDB.hudOpacity*100+.5).."%")
 end
 function M:RefreshHUDPositionPanel()
     if not self.hudPositionPanel then return end
+    for _,entry in ipairs({{"hudEnabled","HUD"},{"hudQuests","Quest icons"},{"hudPlayer","Player dot"},
+        {"hudPet","Pet dot"},{"hudTarget","Target dot"},{"hudParty","Party / raid"}}) do
+        self[entry[1].."Option"].label:SetText(entry[2]..": "..(zMapDB[entry[1]] and "on" or "off"))
+    end
+    self.hudRangeOption.label:SetText("Range: "..zMapDB.hudRange.."y")
+    self.hudOpacityOption.label:SetText("Wall opacity: "..math.floor(zMapDB.hudOpacity*100+.5).."%")
     self.hudOffsetRefreshing=true
     for _,axis in ipairs({"X","Y"}) do
         local slider=self["hudOffset"..axis.."Slider"];local value=zMapDB["hudOffset"..axis] or 0
@@ -403,51 +406,75 @@ function M:RefreshHUDPositionPanel()
     self.hudOffsetRefreshing=nil
 end
 function M:BuildHUDPositionUI(button,text,surface)
-    local panel=CreateFrame("Frame","zMapHUDPosition",UIParent);self.hudPositionPanel=panel
-    panel:SetWidth(340);panel:SetHeight(330);panel:SetPoint("LEFT",UIParent,"LEFT",24,0)
-    panel:SetFrameStrata("DIALOG");panel:EnableMouse(true);surface(panel)
+    local panel=CreateFrame("Frame","zMapHUDSettings",UIParent);self.hudPositionPanel=panel;self.hudSettingsPanel=panel
+    panel:SetWidth(380);panel:SetHeight(552);panel:SetPoint("LEFT",UIParent,"LEFT",24,0)
+    panel:SetFrameStrata("DIALOG");panel:EnableMouse(true);panel:SetMovable(true);surface(panel)
     if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
-    text(panel,"HUD position",12,-12,260,true)
+    panel:RegisterForDrag("LeftButton");panel:SetScript("OnDragStart",function() panel:StartMoving() end)
+    panel:SetScript("OnDragStop",function() panel:StopMovingOrSizing() end)
+    text(panel,"HUD settings",12,-12,300,true)
     local close=button(panel,"X",24,function() panel:Hide() end);close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-8,-8)
-    text(panel,"Drag to move the HUD. Use the mouse wheel over a slider for fine 1-unit adjustments.",12,-44,316)
+    for i,entry in ipairs({"hudEnabled","hudQuests","hudPlayer","hudPet","hudTarget","hudParty"}) do
+        local key=entry
+        local option=button(panel,"",174,function()
+            if key=="hudEnabled" then self:SetHUD(not zMapDB.hudEnabled)
+            else zMapDB[key]=not zMapDB[key];self:RefreshSettingsPanel() end
+        end)
+        self[key.."Option"]=option
+        option:SetPoint("TOPLEFT",panel,"TOPLEFT",12+math.mod(i-1,2)*182,-46-math.floor((i-1)/2)*34)
+    end
+    self.hudQuestOption=self.hudQuestsOption
+    self.hudRangeOption=button(panel,"",174,function()
+        local ranges={[120]=180,[180]=240,[240]=360,[360]=120};zMapDB.hudRange=ranges[zMapDB.hudRange] or 240;self:RefreshSettingsPanel()
+    end);self.hudRangeOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-152)
+    self.hudOpacityOption=button(panel,"",174,function()
+        local opacity=zMapDB.hudOpacity;zMapDB.hudOpacity=opacity<.3 and .35 or opacity<.45 and .5 or .2;self:RefreshSettingsPanel()
+    end);self.hudOpacityOption:SetPoint("LEFT",self.hudRangeOption,"RIGHT",8,0)
+    text(panel,"Players use class colors. Pets are orange. Targets are yellow, or red while in combat.",12,-188,356)
+    text(panel,"Position",12,-242,170,true)
+    self.hudAlignOption=button(panel,"Center on player",174,function() self:CenterHUDOnPlayer() end)
+    self.hudAlignOption:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-12,-236);self.hudOffsetReset=self.hudAlignOption
     for i,entry in ipairs({"X","Y"}) do
         local axis=entry
-        local top=86+(i-1)*78
+        local top=280+(i-1)*78
         local slider=CreateFrame("Slider",nil,panel);self["hudOffset"..axis.."Slider"]=slider
-        slider:SetWidth(316);slider:SetHeight(18);slider:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-top-22)
+        slider:SetWidth(356);slider:SetHeight(18);slider:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-top-22)
         slider:SetOrientation("HORIZONTAL");slider:SetMinMaxValues(-self.hudOffsetLimit,self.hudOffsetLimit)
         if slider.SetValueStep then slider:SetValueStep(1) end
         surface(slider,.055,.07,.09);slider:SetThumbTexture("Interface\\Buttons\\WHITE8X8")
         local thumb=slider:GetThumbTexture();thumb:SetWidth(12);thumb:SetHeight(24);thumb:SetVertexColor(.35,.85,.77,1)
-        slider.label=text(panel,"",12,-top,316)
+        slider.label=text(panel,"",12,-top,356)
         text(panel,axis=="X" and "Left (-3000)" or "Down (-3000)",12,-top-46,150)
-        local high=text(panel,axis=="X" and "Right (+3000)" or "Up (+3000)",178,-top-46,150);high:SetJustifyH("RIGHT")
+        local high=text(panel,axis=="X" and "Right (+3000)" or "Up (+3000)",218,-top-46,150);high:SetJustifyH("RIGHT")
         slider:EnableMouseWheel(true)
         slider:SetScript("OnValueChanged",function()
             if not self.hudOffsetRefreshing then self:SetHUDOffset(axis,slider:GetValue()) end
         end)
         slider:SetScript("OnMouseWheel",function() self:SetHUDOffset(axis,slider:GetValue()+(arg1 or 0)) end)
     end
-    self.hudOffsetReset=button(panel,"Center on player",150,function() self:CenterHUDOnPlayer() end)
-    self.hudOffsetReset:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-252)
-    local back=button(panel,"Map settings",150,function() panel:Hide();self:ToggleSettingsPanel() end)
-    back:SetPoint("LEFT",self.hudOffsetReset,"RIGHT",8,0)
-    text(panel,"Center on player removes manual offsets and aligns the map's center with your character's feet.",12,-288,316)
-    table.insert(UISpecialFrames,"zMapHUDPosition");self:RefreshHUDPositionPanel();panel:Hide()
+    text(panel,"Shift+M toggles the HUD. Center on player clears offsets; Align to feet keeps them. Scroll over a slider for fine adjustments.",12,-442,356)
+    local align=button(panel,"Align to feet",174,function() self:AlignHUD() end)
+    align:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-512)
+    local back=button(panel,"Map settings",174,function() panel:Hide();self:ToggleSettingsPanel() end)
+    back:SetPoint("LEFT",align,"RIGHT",8,0)
+    table.insert(UISpecialFrames,"zMapHUDSettings");self:RefreshHUDPositionPanel();panel:Hide()
 end
-function M:ToggleHUDPositionPanel()
+function M:ToggleHUDSettingsPanel(preview)
     self:BuildUI()
     if self.hudPositionPanel:IsShown() then self.hudPositionPanel:Hide() else
-        self:SetHUD(true);self.frame:Hide();self:RefreshHUDPositionPanel();self.hudPositionPanel:Show()
+        if preview then self:SetHUD(true) end
+        self.hudPositionPanel:SetScale(math.min(1,math.max(.5,(UIParent:GetHeight()-32)/self.hudPositionPanel:GetHeight())))
+        self.frame:Hide();self:RefreshHUDPositionPanel();self.hudPositionPanel:Show()
     end
 end
+function M:ToggleHUDPositionPanel() self:ToggleHUDSettingsPanel(true) end
 function M:BuildSettingsUI(button,text,surface)
     local panel=CreateFrame("Frame",nil,self.frame);self.settingsPanel=panel
-    panel:SetWidth(340);panel:SetHeight(390);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
+    panel:SetWidth(340);panel:SetHeight(252);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
     panel:SetFrameLevel(self.frame:GetFrameLevel()+50);panel:EnableMouse(true);surface(panel)
     text(panel,"Map settings",12,-12,140,true)
     local close=button(panel,"X",24,function() panel:Hide() end);close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-8,-8)
-    self.hudPositionOption=button(panel,"HUD position",140,function() self:ToggleHUDPositionPanel() end)
+    self.hudPositionOption=button(panel,"HUD settings",140,function() self:ToggleHUDSettingsPanel() end)
     self.hudPositionOption:SetPoint("RIGHT",close,"LEFT",-8,0)
     self.minimapOption=button(panel,"",150,function() self:SetAtlasMinimap(not zMapDB.minimapOverride) end)
     self.minimapOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-42)
@@ -460,17 +487,6 @@ function M:BuildSettingsUI(button,text,surface)
     self.pfQuestOption=button(panel,"",150,function() self:SetPFQuest(not zMapDB.pfQuest) end)
     self.pfQuestOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-174)
     text(panel,"Quest icons, tooltips, map links and active paths. Uses pfQuest's filters and route selection.",12,-208,316)
-    self.hudQuestOption=button(panel,"",150,function() zMapDB.hudQuests=not zMapDB.hudQuests;self:RefreshSettingsPanel() end)
-    self.hudQuestOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-252)
-    self.hudAlignOption=button(panel,"Center on player",150,function() self:CenterHUDOnPlayer() end)
-    self.hudAlignOption:SetPoint("LEFT",self.hudQuestOption,"RIGHT",8,0)
-    self.hudRangeOption=button(panel,"",150,function()
-        local ranges={[120]=180,[180]=240,[240]=360,[360]=120};zMapDB.hudRange=ranges[zMapDB.hudRange] or 240;self:RefreshSettingsPanel()
-    end);self.hudRangeOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-286)
-    self.hudOpacityOption=button(panel,"",150,function()
-        local opacity=zMapDB.hudOpacity;zMapDB.hudOpacity=opacity<.3 and .35 or opacity<.45 and .5 or .2;self:RefreshSettingsPanel()
-    end);self.hudOpacityOption:SetPoint("LEFT",self.hudRangeOption,"RIGHT",8,0)
-    text(panel,"Shift+M toggles the HUD. Its dot stays fixed. Camera zoom realigns once after stopping; Center on player also realigns after tilt changes.",12,-328,316)
     self:BuildHUDPositionUI(button,text,surface);self:RefreshSettingsPanel();panel:Hide()
 end
 function M:ToggleSettingsPanel()

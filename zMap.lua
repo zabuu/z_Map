@@ -581,9 +581,10 @@ SlashCmdList["ZMAP"]=function(message)
     elseif message=="hud align" then M:AlignHUD()
     elseif message=="hud center" then M:CenterHUDOnPlayer()
     elseif message=="hud position" then M:ToggleHUDPositionPanel()
+    elseif message=="hud settings" then M:ToggleHUDSettingsPanel()
     elseif message=="hud quests" then zMapDB.hudQuests=not zMapDB.hudQuests;M:RefreshSettingsPanel();M:Print("HUD quests: "..(zMapDB.hudQuests and "on" or "off")..".")
     elseif message=="help" then
-        M:Print("/zmap, /zmap hud, /zmap hud center, /zmap hud align, /zmap hud position, /zmap hud quests, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
+        M:Print("/zmap, /zmap hud, /zmap hud settings, /zmap hud center, /zmap hud align, /zmap hud position, /zmap hud quests, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
     else M:Toggle() end
 end
 local events=CreateFrame("Frame")

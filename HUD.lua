@@ -117,7 +117,7 @@ function M:CreateHUDContext()
     local frame=CreateFrame("Frame",nil,UIParent);frame:SetFrameStrata("LOW");frame:EnableMouse(false)
     -- Explicit false keeps this context from inheriting the full-map arrow.
     local ctx=setmetatable({hud=true,frame=frame,viewport=frame,view={},layers={},wallTextures={},walls={},serial=0,
-        gatherMarkers={},gatherMarkerFree={},gatherRenderEpoch=0,gatherMarkerLimit=128,
+        gatherMarkers={},gatherMarkerFree={},gatherRenderEpoch=0,gatherMarkerLimit=128,unitDots={},
         hoveredGather=false,gatherTooltipMarker=false,cos=1,sin=0,smoothFollow=true,playerMarker=false}, {__index=M})
     for i,name in ipairs({"walls","gather","questRoutes","quests","markers"}) do
         local layer=CreateFrame("Frame",nil,frame);layer:SetAllPoints(frame);layer:SetFrameLevel(frame:GetFrameLevel()+i);ctx.layers[name]=layer
@@ -155,6 +155,73 @@ function M:SetHUD(enabled)
     self:RefreshSettingsPanel()
 end
 local function finite(value) return type(value)=="number" and value==value and abs(value)<10000000 end
+local function styleDot(dot,r,g,b,alpha)
+    if dot.hudR~=r or dot.hudG~=g or dot.hudB~=b then
+        dot:SetVertexColor(r,g,b);dot.hudR=r;dot.hudG=g;dot.hudB=b
+    end
+    if dot:GetAlpha()~=alpha then dot:SetAlpha(alpha) end
+end
+function M:HUDUnitPoint(unit,p)
+    if type(UnitExists)~="function" or not UnitExists(unit) then return end
+    if p.rawX and type(zAPI)=="function" then
+        local ok,x,y,z=pcall(zAPI,"unitPosition",unit)
+        if ok and finite(x) and finite(y) and finite(z) then
+            return p.x+p.rawY-y,p.y+p.rawX-x,p.space
+        end
+    end
+    for _,member in ipairs(self.group or {}) do
+        if member.unit==unit then return member.x,member.y,member.space end
+    end
+end
+function M:PlaceHUDUnitDot(ctx,unit,x,y,space,r,g,b,size)
+    if not x or space~=ctx.view.space then return end
+    local sx,sy=ctx:ToScreen(x,y);local alpha=ctx:HUDVisibility(sx,sy)*.95
+    if alpha<.03 then return end
+    local dot=ctx.unitDots[unit]
+    if not dot then
+        dot=ctx.layers.markers:CreateTexture(nil,"ARTWORK");ctx.unitDots[unit]=dot
+        dot:SetTexture("Interface\\AddOns\\z_Map\\Media\\GroupCircle")
+        dot:SetWidth(size);dot:SetHeight(size)
+    end
+    if dot.hudX~=sx or dot.hudY~=sy then
+        dot:ClearAllPoints();dot:SetPoint("CENTER",ctx.viewport,"TOPLEFT",sx,-sy);dot.hudX=sx;dot.hudY=sy
+    end
+    styleDot(dot,r,g,b,alpha);dot.hudEpoch=ctx.serial
+    if not dot:IsShown() then dot:Show() end
+    return true
+end
+function M:RenderHUDUnits(ctx,p)
+    ctx.unitDots=ctx.unitDots or {}
+    local _,class=UnitClass("player");local r,g,b=self:ClassColor(class)
+    styleDot(ctx.playerDot,r,g,b,.95)
+    if zMapDB.hudPlayer then
+        if not ctx.playerDot:IsShown() then ctx.playerDot:Show() end
+    elseif ctx.playerDot:IsShown() then ctx.playerDot:Hide() end
+    local target
+    if zMapDB.hudTarget and not UnitIsUnit("target","player") then
+        local x,y,space=self:HUDUnitPoint("target",p)
+        local combat=UnitAffectingCombat and UnitAffectingCombat("target")
+        target=self:PlaceHUDUnitDot(ctx,"target",x,y,space,1,combat and .15 or .85,combat and .15 or 0,9)
+    end
+    if zMapDB.hudPet and not (target and UnitIsUnit("pet","target")) then
+        local x,y,space=self:HUDUnitPoint("pet",p)
+        self:PlaceHUDUnitDot(ctx,"pet",x,y,space,1,.5,0,7)
+    end
+    if zMapDB.hudParty then
+        local count=GetNumRaidMembers and GetNumRaidMembers() or 0;local prefix="raid"
+        if count==0 then prefix="party";count=min(4,GetNumPartyMembers and GetNumPartyMembers() or 0) end
+        for i=1,min(40,count) do
+            local unit=prefix..i
+            if not UnitIsUnit(unit,"player") and (not UnitIsConnected or UnitIsConnected(unit)) and
+                not (target and UnitIsUnit(unit,"target")) then
+                local x,y,space=self:HUDUnitPoint(unit,p)
+                local _,class=UnitClass(unit);local r,g,b=self:ClassColor(class)
+                self:PlaceHUDUnitDot(ctx,unit,x,y,space,r,g,b,7)
+            end
+        end
+    end
+    for _,dot in pairs(ctx.unitDots) do if dot.hudEpoch~=ctx.serial and dot:IsShown() then dot:Hide() end end
+end
 M.hudOffsetLimit=3000
 local function offsetValue(value)
     value=tonumber(value)
@@ -327,10 +394,11 @@ function M:UpdateHUD(elapsed,pose)
             if marker:IsShown() then marker.hudBaseAlpha=marker:GetAlpha()*.85 end
         end
     end
-    self:RenderHUDWalls(ctx,angle);ctx:ReprojectFollowMarkers()
+    self:RenderHUDWalls(ctx,angle);ctx:ReprojectFollowMarkers();self:RenderHUDUnits(ctx,p)
 end
 function M:InitializeHUD()
     zMapDB.hudEnabled=zMapDB.hudEnabled==true;zMapDB.hudQuests=zMapDB.hudQuests==true
+    for _,key in ipairs({"hudPlayer","hudPet","hudTarget","hudParty"}) do zMapDB[key]=zMapDB[key]~=false end
     zMapDB.hudRange=self.Clamp(tonumber(zMapDB.hudRange) or 240,120,360)
     zMapDB.hudOpacity=self.Clamp(tonumber(zMapDB.hudOpacity) or .35,.1,.6)
     zMapDB.hudOffsetX=offsetValue(zMapDB.hudOffsetX);zMapDB.hudOffsetY=offsetValue(zMapDB.hudOffsetY)
