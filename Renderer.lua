@@ -269,7 +269,10 @@ function M:Render()
         -- Load the small floor painting before requesting close-up resources.
         -- It remains the fallback while a native tile set is being filled.
         if self.focus and self.focus.space==v.space then self:NativeArt(self.focus,1) end
-        local actual=self:Terrain(terrain)
+        -- The atlas minimap follows the current dungeon plan. ADT terrain can
+        -- be an exterior/roof image and must not cover that plan at close zoom.
+        local actual=0
+        if not self.dungeonPlan then actual=self:Terrain(terrain) end
         local plan=(zMapDB.floorArt or table.getn(self.floors[v.space] or {})>1) and self.interiorSpaces[v.space]
         self:SetLayer("detail",plan and 1 or 1-actual)
     end

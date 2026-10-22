@@ -265,6 +265,24 @@ function M:SetAtlasMinimap(enabled)
     if not enabled then self:HideAtlasMinimap();if not self:IsGatherVisible() then self:ClearGather() end end
     self.miniRenderKey=nil;self:RefreshSettingsPanel()
 end
+function M:DungeonMinimapState(player)
+    local inside,kind
+    if type(IsInInstance)=="function" then
+        local ok,a,b=pcall(IsInInstance);if ok then inside=a;kind=b end
+    end
+    if inside==nil and kind==nil and type(GetInstanceInfo)=="function" then
+        local ok,name,value=pcall(GetInstanceInfo);if ok then kind=value;inside=kind=="party" or kind=="raid" end
+    end
+    if inside~=true and inside~=1 or kind=="pvp" or kind=="arena" then return false,true end
+    if not player or not player.zone or player.space=="world" or player.zone.art==false then return true,false end
+    -- A retained outdoor/other-instance world-map selection is not a dungeon
+    -- coordinate source. Let the native minimap show the actual loaded floor.
+    if type(UnitPosition)=="function" then
+        local ok,y,x,z,map=pcall(UnitPosition,"player")
+        if ok and type(map)=="number" and map==map and map~=player.zone.map then return true,false end
+    end
+    return true,true
+end
 function M:UpdateAtlasMinimap(elapsed)
     if not zMapDB.minimapOverride or not self.miniWorld or not Minimap or
         not Minimap:IsShown() or Minimap.IsVisible and not Minimap:IsVisible() or WorldMapFrame and WorldMapFrame:IsShown() then
@@ -273,16 +291,17 @@ function M:UpdateAtlasMinimap(elapsed)
     local large=self.frame and self.frame:IsShown()
     if not large then self:SamplePlayer() end
     local p=self.player
-    if not p then self:HideAtlasMinimap();return end
+    local dungeon,reliable=self:DungeonMinimapState(p)
+    if not p or not reliable then self:HideAtlasMinimap();return end
     local ctx=self.miniContext or self:CreateMinimapContext();local v=ctx.view
     local w,h=Minimap:GetWidth(),Minimap:GetHeight()
     if w<30 or h<30 then self:HideAtlasMinimap();return end
     local scale=math.min(w,h)/self:MinimapSpan()
     local style=zMapDB.minimapStyle=="match" and zMapDB.style or zMapDB.minimapStyle
-    local changed=v.x~=p.x or v.y~=p.y or v.space~=p.space or v.width~=w or v.height~=h or v.scale~=scale or ctx.style~=style or ctx.focus~=p.zone or ctx.interiorMode~=zMapDB.interiors
+    local changed=v.x~=p.x or v.y~=p.y or v.space~=p.space or v.width~=w or v.height~=h or v.scale~=scale or ctx.style~=style or ctx.focus~=p.zone or ctx.interiorMode~=zMapDB.interiors or ctx.dungeonPlan~=dungeon
     v.x=p.x;v.y=p.y;v.space=p.space;v.width=w;v.height=h;v.scale=scale
     ctx.gatherIconScale=.65+.35*self:MinimapZoom()/5
-    ctx.player=p;ctx.group=self.group;ctx.gatherNodes=self.gatherNodes;ctx.focus=p.zone or false;ctx.style=style;ctx.interiorMode=zMapDB.interiors
+    ctx.player=p;ctx.group=self.group;ctx.gatherNodes=self.gatherNodes;ctx.focus=p.zone or false;ctx.style=style;ctx.interiorMode=zMapDB.interiors;ctx.dungeonPlan=dungeon
     if ctx.frame:GetWidth()~=w then ctx.frame:SetWidth(w) end;if ctx.frame:GetHeight()~=h then ctx.frame:SetHeight(h) end
     if not ctx.frame:IsShown() then ctx.frame:Show();changed=true end
     self:UseNativeMinimapPlayer(true)

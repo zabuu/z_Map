@@ -1,4 +1,4 @@
-# zMap 1.8.1
+# zMap 1.8.2
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -15,6 +15,8 @@ Alternatively, run `git clone https://github.com/zabuu/z_Map.git z_Map` from `In
 The map works without other addons or native extensions. Live gathering is optional and requires **zAPI 2.4 or later**, installed separately in the game directory; this repository does not install a DLL. Without it, the atlas and saved/shared locations still work. Artwork ownership and the source-code license are explained in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
+
+Version 1.8.2 fixes **dungeon minimaps**, including Stratholme retaining the Eastern Plaguelands map after entry. The minimap uses the dungeon's current atlas plan at every zoom, without exterior/roof terrain covering it. When the client still reports outdoor coordinates, a different instance, or no usable dungeon position, zMap reveals the game's native dungeon minimap until reliable atlas coordinates return. The zMap minimap option stays enabled and resumes automatically outside. Outdoor buildings and battlegrounds keep their existing rendering. **`/reload`** applies the fix.
 
 Version 1.8.1 adds optional **World node icons**, under **`/zmap hud settings`**. The same circular item icons and gold rims used by live map nodes appear just above the actual resources in the game world. This starts off and works independently of HUD, minimap and large-map visibility. It respects **Nodes → Live**, categories and individual resource filters. Only nodes confirmed in the current live scan are projected; logged/shared locations never appear in this overlay. zAPI is required, and visibility reaches only as far as the client actually loads the objects. Icons are click-through and hide while a large map is open. **`/reload`**, then enable **World node icons**.
 
