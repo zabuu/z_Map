@@ -1,6 +1,7 @@
 -- Optional click-through automap: native wall traces, nodes, heading up.
 local M=zMap
 M.hudWallLimit=1536
+M.hudWallCacheLimit=32768
 local DATA=zMapHudData or {models={},placements={},grid={},cell=128}
 local floor,abs,min,max,sqrt=math.floor,math.abs,math.min,math.max,math.sqrt
 local alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-"
@@ -29,7 +30,9 @@ local function clipCircle(x,y,u,v,cx,cy,radius)
     local dx,dy=u-x,v-y;local ox,oy=x-cx,y-cy
     local a=dx*dx+dy*dy
     if a<.000001 then return end
-    local b=ox*dx+oy*dy;local c=ox*ox+oy*oy-radius*radius
+    local r2=radius*radius
+    if ox*ox+oy*oy<=r2 and (u-cx)^2+(v-cy)^2<=r2 then return x,y,u,v end
+    local b=ox*dx+oy*dy;local c=ox*ox+oy*oy-r2
     local discriminant=b*b-a*c
     if discriminant<=0 then return end
     local root=sqrt(discriminant)
@@ -37,26 +40,65 @@ local function clipCircle(x,y,u,v,cx,cy,radius)
     if lo>=hi then return end
     return x+lo*dx,y+lo*dy,x+hi*dx,y+hi*dy
 end
-local function lineUV(c,s,length,x,y) return .5+(c*x+s*y)/length,.5+(-s*x+c*y)/(32*1.2) end
 function M:HUDLine(index,x,y,u,v,alpha)
     local view=self.view;local radius=max(1,min(view.width,view.height)/2-10)
     x,y,u,v=clipCircle(x,y,u,v,view.width/2,view.height/2,radius)
     if not x then return false end
-    alpha=alpha*self:HUDVisibility((x+u)/2,(y+v)/2)
-    local dx,dy=u-x,v-y;local length=sqrt(dx*dx+dy*dy)
-    if alpha<.015 or length<1 then return false end
+    local mx,my=(x+u)/2,(y+v)/2
+    local distance=(mx-view.width/2)^2+(my-view.height/2)^2
+    if distance>radius*radius*.49 then alpha=alpha*max(0,(1-sqrt(distance)/radius)/.3) end
+    local dx,dy=u-x,v-y;local length2=dx*dx+dy*dy
+    if alpha<.015 or length2<1 then return false end
     local texture=self.wallTextures[index]
     if not texture then
         texture=self.layers.walls:CreateTexture(nil,"ARTWORK");self.wallTextures[index]=texture
         texture:SetTexture("Interface\\AddOns\\z_Map\\Media\\Hud\\Line")
     end
-    local width,height=abs(dx)+2,abs(dy)+2;local c,s=dx/length,dy/length
-    local a,b=lineUV(c,s,length,-width/2,-height/2);local d,e=lineUV(c,s,length,-width/2,height/2)
-    local f,g=lineUV(c,s,length,width/2,-height/2);local h,i=lineUV(c,s,length,width/2,height/2)
-    texture:SetWidth(width);texture:SetHeight(height)
-    texture:SetPoint("CENTER",self.viewport,"TOPLEFT",(x+u)/2,-(y+v)/2)
-    texture:SetTexCoord(a,b,d,e,f,g,h,i);texture:SetVertexColor(.74,.84,.81,alpha);texture:Show()
+    if not texture.hudDX or abs(texture.hudDX-dx)>.000001 or abs(texture.hudDY-dy)>.000001 then
+        local width,height=abs(dx)+2,abs(dy)+2;local length=sqrt(length2)
+        local a=.5-(dx*width+dy*height)/(2*length2)
+        local b=.5+(dy*width-dx*height)/(76.8*length)
+        local d=.5+(-dx*width+dy*height)/(2*length2)
+        local e=.5+(dy*width+dx*height)/(76.8*length)
+        if texture.hudWidth~=width then texture:SetWidth(width);texture.hudWidth=width end
+        if texture.hudHeight~=height then texture:SetHeight(height);texture.hudHeight=height end
+        texture:SetTexCoord(a,b,d,e,1-d,1-e,1-a,1-b);texture.hudDX=dx;texture.hudDY=dy
+    end
+    local parent=self.viewport
+    if self.wallOffsetX then
+        parent=self.layers.walls;mx=mx-self.wallOffsetX;my=my-self.wallOffsetY
+    end
+    if texture.hudParent~=parent or not texture.hudX or abs(texture.hudX-mx)>.000001 or abs(texture.hudY-my)>.000001 then
+        texture:SetPoint("CENTER",parent,"TOPLEFT",mx,-my);texture.hudX=mx;texture.hudY=my;texture.hudParent=parent
+    end
+    if not texture.hudAlpha or abs(texture.hudAlpha-alpha)>.000001 then
+        texture:SetVertexColor(.74,.84,.81,alpha);texture.hudAlpha=alpha
+    end
+    if not texture.hudShown then texture:Show();texture.hudShown=true end
     return true
+end
+local function wallPage(ctx,task,page)
+    local cache=ctx.wallCache
+    if not cache then cache={cells={},size=0,clock=0,decoded=0,hits=0};ctx.wallCache=cache end
+    cache.clock=cache.clock+1
+    local key=task.key..":"..page
+    local entry=cache.cells[key]
+    if not entry then
+        local count=min(256,string.len(task.raw)/14-page*256)
+        if count>M.hudWallCacheLimit then return end
+        -- Small pages avoid reserving an entire dense WMO cell at once.
+        while cache.size+count>M.hudWallCacheLimit do
+            local oldestKey,oldest
+            for key,cell in pairs(cache.cells) do
+                if not oldest or cell.used<oldest.used then oldestKey=key;oldest=cell end
+            end
+            if not oldest then break end
+            cache.cells[oldestKey]=nil;cache.size=cache.size-oldest.count
+        end
+        entry={values={},count=count};cache.cells[key]=entry;cache.size=cache.size+count
+    end
+    entry.used=cache.clock
+    return entry.values
 end
 function M:StartHUDWallQuery()
     local ctx=self.hudContext;local v=ctx.view;local radius=zMapDB.hudRange*1.25
@@ -71,7 +113,7 @@ function M:StartHUDWallQuery()
                     for cx=floor((localX-radius)/cell),floor((localX+radius)/cell) do
                         for cy=floor((localY-radius)/cell),floor((localY+radius)/cell) do
                             local raw=DATA.models[p[1]][cx..":"..cy]
-                            if raw then table.insert(tasks,{raw=raw,x=cx*cell,y=cy*cell,placement=p,
+                            if raw then table.insert(tasks,{raw=raw,key=id..":"..cx..":"..cy,x=cx*cell,y=cy*cell,placement=p,
                                 distance=(localX-(cx+.5)*cell)^2+(localY-(cy+.5)*cell)^2}) end
                         end
                     end
@@ -91,15 +133,31 @@ function M:StepHUDWallQuery()
     while spent<1200 and job.scanned<16000 do
         local task=job.tasks[job.task]
         if not task then break end
-        if job.offset>string.len(task.raw) then job.task=job.task+1;job.offset=1
+        if job.offset>string.len(task.raw) then job.task=job.task+1;job.offset=1;job.cell=nil;job.page=nil
         else
             local raw,k,p=task.raw,job.offset,task.placement
+            local record=(k-1)/14;local page=floor(record/256)
+            if k==1 or page~=job.page then job.cell=wallPage(ctx,task,page);job.page=page end
             job.offset=k+14;spent=spent+1;job.scanned=job.scanned+1
-            local low,high=unpackNumber(raw,k+8,3)-65536+p[7],unpackNumber(raw,k+11,3)-65536+p[7]
+            local values=job.cell;local index=(record-page*256)*6+1
+            local low,high
+            if values and values[index+4] then
+                low,high=values[index+4],values[index+5];ctx.wallCache.hits=ctx.wallCache.hits+1
+            else
+                low,high=unpackNumber(raw,k+8,3)-65536+p[7],unpackNumber(raw,k+11,3)-65536+p[7]
+                ctx.wallCache.decoded=ctx.wallCache.decoded+1
+                if values then values[index+4]=low;values[index+5]=high end
+            end
             if not z or z>=low-.75 and z<=high+.75 then
-                local x,y=task.x+unpackNumber(raw,k,2),task.y+unpackNumber(raw,k+2,2)
-                local u,v=task.x+unpackNumber(raw,k+4,2),task.y+unpackNumber(raw,k+6,2)
-                x,y,u,v=p[3]+p[5]*x+p[6]*y,p[4]+p[6]*x-p[5]*y,p[3]+p[5]*u+p[6]*v,p[4]+p[6]*u-p[5]*v
+                local x,y,u,v
+                if values and values[index] then
+                    x,y,u,v=values[index],values[index+1],values[index+2],values[index+3]
+                else
+                    x,y=task.x+unpackNumber(raw,k,2),task.y+unpackNumber(raw,k+2,2)
+                    u,v=task.x+unpackNumber(raw,k+4,2),task.y+unpackNumber(raw,k+6,2)
+                    x,y,u,v=p[3]+p[5]*x+p[6]*y,p[4]+p[6]*x-p[5]*y,p[3]+p[5]*u+p[6]*v,p[4]+p[6]*u-p[5]*v
+                    if values then values[index]=x;values[index+1]=y;values[index+2]=u;values[index+3]=v end
+                end
                 local distance=((x+u)/2-q.x)^2+((y+v)/2-q.y)^2
                 if distance<(zMapDB.hudRange*1.25)^2 then
                     table.insert(job.results,{x,y,u,v,distance})
@@ -120,7 +178,12 @@ function M:CreateHUDContext()
         gatherMarkers={},gatherMarkerFree={},gatherRenderEpoch=0,gatherMarkerLimit=128,unitDots={},
         hoveredGather=false,gatherTooltipMarker=false,cos=1,sin=0,smoothFollow=true,playerMarker=false}, {__index=M})
     for i,name in ipairs({"walls","gather","questRoutes","quests","markers"}) do
-        local layer=CreateFrame("Frame",nil,frame);layer:SetAllPoints(frame);layer:SetFrameLevel(frame:GetFrameLevel()+i);ctx.layers[name]=layer
+        local layer=CreateFrame("Frame",nil,frame)
+        if name=="walls" then
+            -- A single translated parent carries unchanged wall textures.
+            layer:SetWidth(1);layer:SetHeight(1);layer:SetPoint("TOPLEFT",frame,"TOPLEFT",0,0)
+        else layer:SetAllPoints(frame) end
+        layer:SetFrameLevel(frame:GetFrameLevel()+i);ctx.layers[name]=layer
     end
     ctx.playerDot=ctx.layers.markers:CreateTexture(nil,"OVERLAY")
     ctx.playerDot:SetTexture("Interface\\AddOns\\z_Map\\Media\\GroupCircle")
@@ -346,15 +409,34 @@ function M:RenderHUDWalls(ctx,angle)
     local draw=ctx.wallDraw
     if not draw or draw.x~=v.x or draw.y~=v.y or abs(draw.angle-angle)>.001 or draw.walls~=ctx.walls or
         draw.width~=v.width or draw.height~=v.height or draw.scale~=v.scale or draw.opacity~=zMapDB.hudOpacity then
+        local bx,by=ctx.wallBaseX,ctx.wallBaseY
+        if not draw or draw.angle~=angle or draw.walls~=ctx.walls or draw.width~=v.width or
+            draw.height~=v.height or draw.scale~=v.scale then
+            bx=v.x;by=v.y;ctx.wallBaseX=bx;ctx.wallBaseY=by
+        end
+        local c,s,scale=ctx.cos,ctx.sin,v.scale
+        local offsetX=(c*(bx-v.x)-s*(by-v.y))*scale
+        local offsetY=(s*(bx-v.x)+c*(by-v.y))*scale
+        if ctx.wallOffsetX~=offsetX or ctx.wallOffsetY~=offsetY then
+            ctx.layers.walls:SetPoint("TOPLEFT",ctx.viewport,"TOPLEFT",offsetX,-offsetY)
+            ctx.wallOffsetX=offsetX;ctx.wallOffsetY=offsetY
+        end
         local used=0
         for _,wall in ipairs(ctx.walls) do
-            local x,y=ctx:ToScreen(wall[1],wall[2]);local u,w=ctx:ToScreen(wall[3],wall[4])
+            local x,y=wall[1]-bx,wall[2]-by;local u,w=wall[3]-bx,wall[4]-by
+            x,y=v.width/2+(c*x-s*y)*scale+offsetX,v.height/2+(s*x+c*y)*scale+offsetY
+            u,w=v.width/2+(c*u-s*w)*scale+offsetX,v.height/2+(s*u+c*w)*scale+offsetY
             if ctx:HUDLine(used+1,x,y,u,w,zMapDB.hudOpacity) then used=used+1 end
             if used>=self.hudWallLimit then break end
         end
-        for i=used+1,table.getn(ctx.wallTextures) do ctx.wallTextures[i]:Hide() end
+        for i=used+1,table.getn(ctx.wallTextures) do
+            local texture=ctx.wallTextures[i]
+            if texture.hudShown then texture:Hide();texture.hudShown=false end
+        end
         ctx.wallShown=used
-        ctx.wallDraw={x=v.x,y=v.y,angle=angle,walls=ctx.walls,width=v.width,height=v.height,scale=v.scale,opacity=zMapDB.hudOpacity}
+        draw=draw or {};ctx.wallDraw=draw
+        draw.x=v.x;draw.y=v.y;draw.angle=angle;draw.walls=ctx.walls
+        draw.width=v.width;draw.height=v.height;draw.scale=v.scale;draw.opacity=zMapDB.hudOpacity
     end
 end
 function M:UpdateHUD(elapsed,pose)

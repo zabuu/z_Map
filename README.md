@@ -1,4 +1,4 @@
-# zMap 1.8.2
+# zMap 1.8.3
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -15,6 +15,8 @@ Alternatively, run `git clone https://github.com/zabuu/z_Map.git z_Map` from `In
 The map works without other addons or native extensions. Live gathering is optional and requires **zAPI 2.4 or later**, installed separately in the game directory; this repository does not install a DLL. Without it, the atlas and saved/shared locations still work. Artwork ownership and the source-code license are explained in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
+
+Version 1.8.3 optimizes **HUD walls**. Nearby geometry is decoded into a bounded session cache and reused as you travel or change floors. Straight movement shifts a shared wall layer, while individual textures update only when their shape, clipping or fade changes. Full wall coverage, circular fading and movement every rendered frame are preserved. Offline Gadgetzan and Ironforge benchmarks used roughly **60% less wall-render CPU while moving**, **20–25% less while turning**, and about **half the time for repeat wall queries**. These measure the Lua renderer, not in-game FPS. `/zmap status` includes cache usage. **`/reload`** applies the update.
 
 Version 1.8.2 fixes **dungeon minimaps**, including Stratholme retaining the Eastern Plaguelands map after entry. The minimap uses the dungeon's current atlas plan at every zoom, without exterior/roof terrain covering it. When the client still reports outdoor coordinates, a different instance, or no usable dungeon position, zMap reveals the game's native dungeon minimap until reliable atlas coordinates return. The zMap minimap option stays enabled and resumes automatically outside. Outdoor buildings and battlegrounds keep their existing rendering. **`/reload`** applies the fix.
 
