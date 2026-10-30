@@ -1,4 +1,4 @@
-# zMap 1.8.3
+# zMap 1.9.1
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -15,6 +15,14 @@ Alternatively, run `git clone https://github.com/zabuu/z_Map.git z_Map` from `In
 The map works without other addons or native extensions. Live gathering is optional and requires **zAPI 2.4 or later**, installed separately in the game directory; this repository does not install a DLL. Without it, the atlas and saved/shared locations still work. Artwork ownership and the source-code license are explained in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
+
+Version 1.9.1 fixes **sharing stuck at “paused for chat”** when a chat skin leaves its input shown without focus. Actual focus/composition now controls that pause, while normal chat still reserves 30 quiet seconds and all zMap senders keep their shared 15-second send budget. Channel events accept the client's full numbered channel name when the bare-name field is missing; delayed own packets/echoes no longer count as player chat. **Nodes → Share now**, or `/zmap sync now`, queues a fresh summary and resends logged locations at the next safe slots. Repeated clicks coalesce; large histories transfer gradually, and chat/server cooldowns remain in force. The Share tooltip now shows the wait reason/countdown, peers, sent/received packet counts and backlog. `/zmap sync status` exposes the same diagnostics without sending a packet. Incoming node shares remain active during an outbound pause; another online zMap user with sharing enabled is required. **`/reload`** applies the fix if 1.9.0's new module was already loaded.
+
+Version 1.9.0 adds **learned resting areas**: a faint green cloud on the large map and optional zMap minimap, below icons. It records the server's current resting flag as you explore, independently of stored bonus XP, and saves observations separately for each realm/faction. Later non-resting visits remove matching samples. Coverage starts empty and fills around visited positions; the soft, eight-yard footprints approximate edges and do not claim exact server boundaries. **Settings → Rested areas**, or `/zmap rested`, toggles both views while learning continues. `/zmap rested status` reports observations and the current signal. The HUD is unchanged. The public OctoWoW database was checked, but no usable resting-area flags or boundary data were found; no online location database is bundled. **Restart WoW once** to load the new module and mask texture.
+
+Version 1.8.5 addresses **HUD walls disappearing while changing elevation**. Dense scans finish instead of repeatedly restarting as you run over slopes, and the existing walls stay visible until the replacement is ready. The normal height margin is 3 yards (previously 0.75). In **HUD settings**, Height filter cycles normal, relaxed (12 yards), and off (all floors); it affects walls only. Missed floor traces recover from a stale elevation after two seconds at a stable new feet height. `/zmap hud status` reports feet/floor height, trace state, pending scans and rejected wall counts to help distinguish height clipping from missing geometry. **`/reload`** applies the update.
+
+Version 1.8.4 further reduces **HUD movement and turning costs**. Circular clipping, fades and lengths are prepared independently of heading; straight movement reuses unchanged geometry. Turning moves each line inside a reusable small texture rectangle, avoiding most anchor and size changes. Wall coverage, range, line shape and per-frame motion remain unchanged. Offline Gadgetzan/Ironforge comparisons use about **50–70% less wall-render CPU while moving** and **50–65% fewer texture setters while turning**. These are renderer measurements, not game FPS. OctoPerf 1.7.1 also captures the anonymous zMap driver and separate HUD work stages. **`/reload`** applies both updates.
 
 Version 1.8.3 optimizes **HUD walls**. Nearby geometry is decoded into a bounded session cache and reused as you travel or change floors. Straight movement shifts a shared wall layer, while individual textures update only when their shape, clipping or fade changes. Full wall coverage, circular fading and movement every rendered frame are preserved. Offline Gadgetzan and Ironforge benchmarks used roughly **60% less wall-render CPU while moving**, **20–25% less while turning**, and about **half the time for repeat wall queries**. These measure the Lua renderer, not in-game FPS. `/zmap status` includes cache usage. **`/reload`** applies the update.
 
@@ -128,10 +136,17 @@ Group positions can span both continents when the native client reports them. zM
 | `/zmap` or `/zm` | Toggle zMap |
 | `/zmap nodes` | Open gathering, history, sharing and individual resource filters |
 | `/zmap nodes reset` | Restore Live, Logged and all resource visibility; keep the location log and sharing preference |
+| `/zmap sync status` | Show node-channel connection, chat/send wait, peers, packet counts and queued history |
+| `/zmap sync now` | Queue a fresh manual node share, keeping chat/server cooldowns |
 | `/zmap transit` | Open boat/zeppelin services, routes and dock arrival/departure estimates |
 | `/zmap settings` | Configure the optional atlas minimap and its look |
 | `/zmap hud` | Toggle the transparent, heading-up wall/node overlay |
 | `/zmap hud quests` | Toggle optional pfQuest icons on the HUD |
+| `/zmap hud settings` | Configure HUD dots, range, opacity, wall height filtering and position |
+| `/zmap hud height` | Cycle normal, relaxed and disabled wall height filtering |
+| `/zmap hud status` | Show HUD floor/trace information and wall-scan diagnostics |
+| `/zmap rested` | Toggle learned green resting footprints on the map and atlas minimap |
+| `/zmap rested status` | Show the current resting signal and observation count |
 | `/zmap hud align` | Measure feet height once and lock the HUD's vertical offset |
 | `/zmap hud center` | Clear manual offsets and center the HUD on your character's feet |
 | `/zmap hud position` | Open live HUD horizontal/vertical offset sliders |

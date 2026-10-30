@@ -3,7 +3,7 @@ local M=zMap
 local ARROW="Interface\\Minimap\\MinimapArrow"
 local outdoor={466+2/3,400,333+1/3,266+2/3,200,133+1/3}
 local indoor={300,240,180,120,80,50}
-local layerNames={"overview","art","artFine","terrain","fine","detail","caves","interior","transitRoutes","gather","transit","questRoutes","quests","markers"}
+local layerNames={"overview","art","artFine","terrain","fine","detail","caves","interior","rested","transitRoutes","gather","transit","questRoutes","quests","markers"}
 local strataOrder={BACKGROUND=1,LOW=2,MEDIUM=3,HIGH=4,DIALOG=5,FULLSCREEN=6,FULLSCREEN_DIALOG=7,TOOLTIP=8}
 local function angle(value) return type(value)=="number" and value==value and math.abs(value)<1000 end
 local function facing(model)
@@ -190,6 +190,7 @@ function M:CreateMinimapContext()
     frame:Hide();self.miniContext=ctx;return ctx
 end
 function M:RenderMinimapMarkers(ctx)
+    ctx:RenderRestedOverlay()
     ctx:RenderGatherMarkers();ctx:RenderTransports();ctx:RenderPFQuest()
     local p=ctx.player
     if p and not self.miniUsesNativeArrow then
@@ -393,6 +394,7 @@ function M:InitializeMinimap()
         local mini=self.miniContext and self.miniContext.frame:IsShown()
         local hud=zMapDB.hudEnabled and not (self.frame and self.frame:IsShown())
         local pose=(mini or hud) and self:ReadFollowPlayer()
+        self:UpdateRested(dt,pose)
         if mini then self:UpdateMinimapMotion(pose) end
         self:UpdateHUD(dt,pose)
         self:UpdateWorldGatherIcons(dt)
@@ -405,6 +407,7 @@ function M:RefreshSettingsPanel()
     if self.hudButton then self.hudButton.label:SetText(zMapDB.hudEnabled and "HUD: on" or "HUD: off") end
     self:RefreshHUDPositionPanel()
     if not self.settingsPanel then return end
+    self.restedOption.label:SetText("Rested areas: "..(zMapDB.restOverlay and "on" or "off"))
     self.minimapOption.label:SetText(zMapDB.minimapOverride and "Minimap: zMap" or "Minimap: Blizzard")
     self.minimapLookOption.label:SetText("Look: "..(zMapDB.minimapStyle=="match" and "same as map" or zMapDB.minimapStyle))
     self.pfQuestOption.label:SetText(not self:PFQuestAvailable() and "pfQuest: not loaded" or zMapDB.pfQuest and "pfQuest: on" or "pfQuest: off")
@@ -417,6 +420,7 @@ function M:RefreshHUDPositionPanel()
     end
     self.hudRangeOption.label:SetText("Range: "..zMapDB.hudRange.."y")
     self.hudOpacityOption.label:SetText("Wall opacity: "..math.floor(zMapDB.hudOpacity*100+.5).."%")
+    self.hudHeightOption.label:SetText("Height filter: "..(zMapDB.hudHeightFilter or "normal"))
     self.worldGatherOption.label:SetText("World node icons: "..(zMapDB.gatherWorldIcons and "on" or "off"))
     self.hudOffsetRefreshing=true
     for _,axis in ipairs({"X","Y"}) do
@@ -451,9 +455,11 @@ function M:BuildHUDPositionUI(button,text,surface)
     self.hudOpacityOption=button(panel,"",174,function()
         local opacity=zMapDB.hudOpacity;zMapDB.hudOpacity=opacity<.3 and .35 or opacity<.45 and .5 or .2;self:RefreshSettingsPanel()
     end);self.hudOpacityOption:SetPoint("LEFT",self.hudRangeOption,"RIGHT",8,0)
-    self.worldGatherOption=button(panel,"",356,function() self:SetWorldGatherIcons(not zMapDB.gatherWorldIcons) end)
+    self.worldGatherOption=button(panel,"",174,function() self:SetWorldGatherIcons(not zMapDB.gatherWorldIcons) end)
     self.worldGatherOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-186)
-    text(panel,"Players use class colors. Pets are orange. Targets are yellow, or red while in combat.",12,-222,356)
+    self.hudHeightOption=button(panel,"",174,function() self:CycleHUDHeightFilter() end)
+    self.hudHeightOption:SetPoint("LEFT",self.worldGatherOption,"RIGHT",8,0)
+    text(panel,"Height filter: normal, relaxed, or off (all floors). Players use class colors; pets orange; targets yellow/red.",12,-222,356)
     text(panel,"Position",12,-276,170,true)
     self.hudAlignOption=button(panel,"Center on player",174,function() self:CenterHUDOnPlayer() end)
     self.hudAlignOption:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-12,-270);self.hudOffsetReset=self.hudAlignOption
@@ -493,7 +499,7 @@ end
 function M:ToggleHUDPositionPanel() self:ToggleHUDSettingsPanel(true) end
 function M:BuildSettingsUI(button,text,surface)
     local panel=CreateFrame("Frame",nil,self.frame);self.settingsPanel=panel
-    panel:SetWidth(340);panel:SetHeight(252);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
+    panel:SetWidth(340);panel:SetHeight(330);panel:SetPoint("TOPLEFT",self.frame,"TOPLEFT",82,-42)
     panel:SetFrameLevel(self.frame:GetFrameLevel()+50);panel:EnableMouse(true);surface(panel)
     text(panel,"Map settings",12,-12,140,true)
     local close=button(panel,"X",24,function() panel:Hide() end);close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-8,-8)
@@ -510,6 +516,9 @@ function M:BuildSettingsUI(button,text,surface)
     self.pfQuestOption=button(panel,"",150,function() self:SetPFQuest(not zMapDB.pfQuest) end)
     self.pfQuestOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-174)
     text(panel,"Quest icons, tooltips, map links and active paths. Uses pfQuest's filters and route selection.",12,-208,316)
+    self.restedOption=button(panel,"",150,function() self:SetRestedOverlay(not zMapDB.restOverlay) end)
+    self.restedOption:SetPoint("TOPLEFT",panel,"TOPLEFT",12,-252)
+    text(panel,"Faint green on the map and atlas minimap. Learns resting locations as you visit; approximate edges.",12,-286,316)
     self:BuildHUDPositionUI(button,text,surface);self:RefreshSettingsPanel();panel:Hide()
 end
 function M:ToggleSettingsPanel()

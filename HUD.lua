@@ -3,7 +3,7 @@ local M=zMap
 M.hudWallLimit=1536
 M.hudWallCacheLimit=32768
 local DATA=zMapHudData or {models={},placements={},grid={},cell=128}
-local floor,abs,min,max,sqrt=math.floor,math.abs,math.min,math.max,math.sqrt
+local floor,ceil,abs,min,max,sqrt=math.floor,math.ceil,math.abs,math.min,math.max,math.sqrt
 local alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-"
 local digits={}
 for i=1,64 do digits[string.byte(alphabet,i)]=i-1 end
@@ -40,6 +40,51 @@ local function clipCircle(x,y,u,v,cx,cy,radius)
     if lo>=hi then return end
     return x+lo*dx,y+lo*dy,x+hi*dx,y+hi*dy
 end
+local function drawWall(ctx,index,x,y,u,v,alpha,length2,length,parent,stable)
+    local mx,my=(x+u)/2,(y+v)/2
+    local dx,dy=u-x,v-y
+    local texture=ctx.wallTextures[index]
+    if not texture then
+        texture=ctx.layers.walls:CreateTexture(nil,"ARTWORK");ctx.wallTextures[index]=texture
+        texture:SetTexture("Interface\\AddOns\\z_Map\\Media\\Hud\\Line")
+    end
+    texture.hudRecord=nil
+    local qx,qy,width,height=mx,my,abs(dx)+2,abs(dy)+2
+    if stable then
+        -- Move the line within its texture with UVs. Keep its small quad until
+        -- an endpoint leaves the one-pixel guard; turning needs fewer anchors
+        -- and dimensions without rounding the line's actual screen position.
+        if texture.hudParent==parent and texture.hudX and
+            abs(mx-texture.hudX)+abs(dx)/2+1<=texture.hudWidth/2 and
+            abs(my-texture.hudY)+abs(dy)/2+1<=texture.hudHeight/2 then
+            qx,qy,width,height=texture.hudX,texture.hudY,texture.hudWidth,texture.hudHeight
+        else
+            qx,qy=floor(mx+.5),floor(my+.5);width,height=ceil(abs(dx)+4),ceil(abs(dy)+4)
+        end
+    end
+    local ox,oy=qx-mx,qy-my
+    if not texture.hudDX or abs(texture.hudDX-dx)>.000001 or abs(texture.hudDY-dy)>.000001 or
+        texture.hudWidth~=width or texture.hudHeight~=height or texture.hudOX~=ox or texture.hudOY~=oy then
+        length=length or sqrt(length2)
+        local su=(dx*ox+dy*oy)/length2;local sv=(-dy*ox+dx*oy)/(38.4*length)
+        local a=.5-(dx*width+dy*height)/(2*length2)
+        local b=.5+(dy*width-dx*height)/(76.8*length)
+        local d=.5+(-dx*width+dy*height)/(2*length2)
+        local e=.5+(dy*width+dx*height)/(76.8*length)
+        if texture.hudWidth~=width then texture:SetWidth(width);texture.hudWidth=width end
+        if texture.hudHeight~=height then texture:SetHeight(height);texture.hudHeight=height end
+        texture:SetTexCoord(a+su,b+sv,d+su,e+sv,1-d+su,1-e+sv,1-a+su,1-b+sv)
+        texture.hudDX=dx;texture.hudDY=dy;texture.hudOX=ox;texture.hudOY=oy
+    end
+    if texture.hudParent~=parent or texture.hudX~=qx or texture.hudY~=qy then
+        texture:SetPoint("CENTER",parent,"TOPLEFT",qx,-qy);texture.hudX=qx;texture.hudY=qy;texture.hudParent=parent
+    end
+    if not texture.hudAlpha or abs(texture.hudAlpha-alpha)>.000001 then
+        texture:SetVertexColor(.74,.84,.81,alpha);texture.hudAlpha=alpha
+    end
+    if not texture.hudShown then texture:Show();texture.hudShown=true end
+    return true
+end
 function M:HUDLine(index,x,y,u,v,alpha)
     local view=self.view;local radius=max(1,min(view.width,view.height)/2-10)
     x,y,u,v=clipCircle(x,y,u,v,view.width/2,view.height/2,radius)
@@ -49,33 +94,11 @@ function M:HUDLine(index,x,y,u,v,alpha)
     if distance>radius*radius*.49 then alpha=alpha*max(0,(1-sqrt(distance)/radius)/.3) end
     local dx,dy=u-x,v-y;local length2=dx*dx+dy*dy
     if alpha<.015 or length2<1 then return false end
-    local texture=self.wallTextures[index]
-    if not texture then
-        texture=self.layers.walls:CreateTexture(nil,"ARTWORK");self.wallTextures[index]=texture
-        texture:SetTexture("Interface\\AddOns\\z_Map\\Media\\Hud\\Line")
-    end
-    if not texture.hudDX or abs(texture.hudDX-dx)>.000001 or abs(texture.hudDY-dy)>.000001 then
-        local width,height=abs(dx)+2,abs(dy)+2;local length=sqrt(length2)
-        local a=.5-(dx*width+dy*height)/(2*length2)
-        local b=.5+(dy*width-dx*height)/(76.8*length)
-        local d=.5+(-dx*width+dy*height)/(2*length2)
-        local e=.5+(dy*width+dx*height)/(76.8*length)
-        if texture.hudWidth~=width then texture:SetWidth(width);texture.hudWidth=width end
-        if texture.hudHeight~=height then texture:SetHeight(height);texture.hudHeight=height end
-        texture:SetTexCoord(a,b,d,e,1-d,1-e,1-a,1-b);texture.hudDX=dx;texture.hudDY=dy
-    end
     local parent=self.viewport
     if self.wallOffsetX then
-        parent=self.layers.walls;mx=mx-self.wallOffsetX;my=my-self.wallOffsetY
+        parent=self.layers.walls;x=x-self.wallOffsetX;u=u-self.wallOffsetX;y=y-self.wallOffsetY;v=v-self.wallOffsetY
     end
-    if texture.hudParent~=parent or not texture.hudX or abs(texture.hudX-mx)>.000001 or abs(texture.hudY-my)>.000001 then
-        texture:SetPoint("CENTER",parent,"TOPLEFT",mx,-my);texture.hudX=mx;texture.hudY=my;texture.hudParent=parent
-    end
-    if not texture.hudAlpha or abs(texture.hudAlpha-alpha)>.000001 then
-        texture:SetVertexColor(.74,.84,.81,alpha);texture.hudAlpha=alpha
-    end
-    if not texture.hudShown then texture:Show();texture.hudShown=true end
-    return true
+    return drawWall(self,index,x,y,u,v,alpha,length2,nil,parent,false)
 end
 local function wallPage(ctx,task,page)
     local cache=ctx.wallCache
@@ -122,13 +145,14 @@ function M:StartHUDWallQuery()
         end
     end
     table.sort(tasks,function(a,b) return a.distance<b.distance end)
-    ctx.wallJob={tasks=tasks,task=1,offset=1,results={},scanned=0}
-    ctx.wallQuery={x=v.x,y=v.y,space=v.space,z=ctx.floorZ,range=zMapDB.hudRange}
+    ctx.wallJob={tasks=tasks,task=1,offset=1,results={},scanned=0,heightRejected=0}
+    ctx.wallQuery={x=v.x,y=v.y,space=v.space,z=ctx.floorZ,range=zMapDB.hudRange,filter=zMapDB.hudHeightFilter}
 end
 function M:StepHUDWallQuery()
     local ctx=self.hudContext;local job=ctx.wallJob
     if not job then return end
-    local q=ctx.wallQuery;local z=q.z and q.z+2
+    local q=ctx.wallQuery;local z=q.filter~="off" and q.z and q.z+2
+    local margin=q.filter=="relaxed" and 12 or 3
     local spent=0
     while spent<1200 and job.scanned<16000 do
         local task=job.tasks[job.task]
@@ -148,7 +172,7 @@ function M:StepHUDWallQuery()
                 ctx.wallCache.decoded=ctx.wallCache.decoded+1
                 if values then values[index+4]=low;values[index+5]=high end
             end
-            if not z or z>=low-.75 and z<=high+.75 then
+            if not z or z>=low-margin and z<=high+margin then
                 local x,y,u,v
                 if values and values[index] then
                     x,y,u,v=values[index],values[index+1],values[index+2],values[index+3]
@@ -159,16 +183,20 @@ function M:StepHUDWallQuery()
                     if values then values[index]=x;values[index+1]=y;values[index+2]=u;values[index+3]=v end
                 end
                 local distance=((x+u)/2-q.x)^2+((y+v)/2-q.y)^2
-                if distance<(zMapDB.hudRange*1.25)^2 then
+                if distance<(q.range*1.25)^2 then
                     table.insert(job.results,{x,y,u,v,distance})
                     if table.getn(job.results)>=2400 then break end
                 end
-            end
+            else job.heightRejected=job.heightRejected+1 end
         end
     end
     if not job.tasks[job.task] or job.scanned>=16000 or table.getn(job.results)>=2400 then
         table.sort(job.results,function(a,b) return a[5]<b[5] end)
-        ctx.walls=job.results;ctx.wallScanned=job.scanned;ctx.wallJob=nil
+        ctx.walls=job.results;ctx.wallScanned=job.scanned
+        ctx.wallReport={scanned=job.scanned,heightRejected=job.heightRejected,tasks=table.getn(job.tasks),
+            candidates=table.getn(job.results),z=q.z,filter=q.filter,query=q,
+            limited=job.scanned>=16000 or table.getn(job.results)>=2400}
+        ctx.wallJob=nil
     end
 end
 function M:CreateHUDContext()
@@ -366,16 +394,63 @@ function M:UpdateHUDFloor(ctx,p,elapsed)
     ctx.floorElapsed=(ctx.floorElapsed or 0)+elapsed
     local reset=ctx.floorSpace~=p.space or ctx.floorZone~=p.zone or
         ctx.floorX and (ctx.floorX-p.x)^2+(ctx.floorY-p.y)^2>40000
-    if reset then ctx.floorGrounded=false;ctx.floorZ=p.z end
+    if reset then
+        ctx.floorGrounded=false;ctx.floorZ=p.z;ctx.floorMissZ=nil;ctx.floorStableTime=0;ctx.floorMissTime=0
+    end
     if not reset and ctx.floorElapsed<.5 then return end
+    local dt=ctx.floorElapsed
     ctx.floorElapsed=0;ctx.floorSpace=p.space;ctx.floorZone=p.zone;ctx.floorX=p.x;ctx.floorY=p.y
+    ctx.floorTrace="unavailable"
     if p.rawX and type(zAPI)=="function" then
         -- Start just above the feet so an overhead roof cannot win the trace.
         local ok,hit,x,y,z=pcall(zAPI,"raycast",p.rawX,p.rawY,p.rawZ+.25,p.rawX,p.rawY,p.rawZ-180)
         if ok and hit==1 and finite(z) and z<=p.rawZ+.3 and z>=p.rawZ-180.1 then
             ctx.floorZ=z;ctx.floorGrounded=true
-        elseif not ctx.floorGrounded then ctx.floorZ=p.z end
-    elseif not ctx.floorGrounded then ctx.floorZ=p.z end
+            ctx.floorTrace="hit";ctx.floorMissTime=0;ctx.floorMissZ=nil;ctx.floorStableTime=0
+            return
+        end
+        ctx.floorTrace=ok and hit~=1 and "miss" or "invalid"
+    end
+    ctx.floorMissTime=(ctx.floorMissTime or 0)+dt
+    if finite(p.z) then
+        if not ctx.floorMissZ or abs(p.z-ctx.floorMissZ)>1 then
+            ctx.floorMissZ=p.z;ctx.floorStableTime=0
+        else ctx.floorStableTime=(ctx.floorStableTime or 0)+dt end
+        -- Keep the ground through jumps/falls. If traces keep missing after
+        -- settling on another level, do not keep the old floor indefinitely.
+        if not ctx.floorGrounded or ctx.floorStableTime>=2 and abs(p.z-ctx.floorZ)>3 then
+            ctx.floorZ=p.z;ctx.floorGrounded=false
+        end
+    elseif not ctx.floorGrounded then ctx.floorZ=nil end
+end
+function M:CycleHUDHeightFilter()
+    local nextFilter={normal="relaxed",relaxed="off",off="normal"}
+    zMapDB.hudHeightFilter=nextFilter[zMapDB.hudHeightFilter] or "normal"
+    self:RefreshSettingsPanel()
+end
+function M:HUDStatus()
+    local ctx=self.hudContext
+    if not ctx then self:Print("HUD: "..(zMapDB.hudEnabled and "waiting for player position." or "off."));return end
+    local function height(z) return finite(z) and string.format("%.1f",z) or "unknown" end
+    local source=ctx.floorGrounded and (ctx.floorTrace=="hit" and "ground trace" or "cached ground") or "feet fallback"
+    self:Print("HUD height: feet "..height(ctx.player and ctx.player.z).."y | floor "..height(ctx.floorZ).."y ("..source..
+        ") | trace "..(ctx.floorTrace or "waiting")..
+        ((ctx.floorMissTime or 0)>0 and string.format(" (%.1fs)",ctx.floorMissTime) or "")..
+        " | filter "..(zMapDB.hudHeightFilter or "normal")..".")
+    local job,report=ctx.wallJob,ctx.wallReport
+    if job then self:Print("HUD scan: pending | "..job.scanned.." records | "..job.heightRejected.." height-filtered.") end
+    if report then
+        local reason=""
+        if report.tasks==0 then reason=" | no bundled wall cells in range"
+        elseif report.scanned>0 and report.heightRejected==report.scanned then reason=" | all scanned walls rejected by height"
+        elseif report.candidates==0 then reason=" | no matching walls in range"
+        elseif not job and (ctx.wallShown or 0)==0 then reason=" | outside view or below fade/detail threshold" end
+        self:Print("HUD last scan: "..report.scanned.." records | "..report.heightRejected.." height-filtered | "..
+            report.candidates.." candidates at "..height(report.z).."y | "..(ctx.wallShown or 0).." drawn"..
+            (report.limited and " | budget reached" or "")..reason..".")
+    end
+    if not ctx.frame:IsShown() then self:Print("HUD frame hidden: "..(not zMapDB.hudEnabled and "disabled" or
+        (self.frame and self.frame:IsShown() or WorldMapFrame and WorldMapFrame:IsShown()) and "map open" or "player position unavailable")..".") end
 end
 function M:AnchorHUD(ctx,p)
     local reference=WorldFrame or UIParent
@@ -404,40 +479,113 @@ function M:AnchorHUD(ctx,p)
     end
     ctx.anchorMode="fixed screen anchor"
 end
+local function prepareWalls(ctx,limit)
+    local v=ctx.view;local prepared=ctx.wallPrepared
+    if prepared and prepared.x==v.x and prepared.y==v.y and prepared.walls==ctx.walls and
+        prepared.width==v.width and prepared.height==v.height and prepared.scale==v.scale and
+        prepared.opacity==zMapDB.hudOpacity and prepared.limit==limit then return false end
+    local reset=not prepared or prepared.walls~=ctx.walls or prepared.width~=v.width or
+        prepared.height~=v.height or prepared.scale~=v.scale
+    if reset then ctx.wallBaseX=v.x;ctx.wallBaseY=v.y end
+    prepared=prepared or {};ctx.wallPrepared=prepared
+    local records=ctx.wallSegments or {};ctx.wallSegments=records
+    local visible=ctx.wallVisible or {};ctx.wallVisible=visible
+    local scale=v.scale;local bx,by=ctx.wallBaseX,ctx.wallBaseY
+    local px,py=(v.x-bx)*scale,(v.y-by)*scale
+    local radius=max(1,min(v.width,v.height)/2-10);local inner=radius*radius*.49
+    local changed,used=reset,0
+    -- Circular clipping, radial fade and segment length are invariant under
+    -- heading changes. Prepare them in unrotated pixels, only after movement.
+    for i,wall in ipairs(ctx.walls) do
+        local record=records[i]
+        if not record then record={};records[i]=record end
+        if reset or record.source~=wall then
+            record.geometry=(record.geometry or 0)+1
+            record.ax=(wall[1]-bx)*scale;record.ay=(wall[2]-by)*scale
+            record.bx=(wall[3]-bx)*scale;record.by=(wall[4]-by)*scale
+            record.mx=(record.ax+record.bx)/2;record.my=(record.ay+record.by)/2
+            local dx,dy=record.bx-record.ax,record.by-record.ay
+            record.baseLength2=dx*dx+dy*dy;record.baseLength=sqrt(record.baseLength2)
+            local safeRadius=radius-record.baseLength/2
+            record.inside2=safeRadius>=0 and safeRadius*safeRadius or -1
+            record.source=wall
+        end
+        local x,y,u,w=record.ax,record.ay,record.bx,record.by
+        local mx,my=record.mx-px,record.my-py
+        local distance=mx*mx+my*my
+        local length2,length=record.baseLength2,record.baseLength
+        if distance>record.inside2 then
+            x,y,u,w=clipCircle(x,y,u,w,px,py,radius)
+            if x then
+                mx,my=(x+u)/2-px,(y+w)/2-py;distance=mx*mx+my*my
+                local dx,dy=u-x,w-y;length2=dx*dx+dy*dy
+                if record.x~=x or record.y~=y or record.u~=u or record.v~=w then length=sqrt(length2)
+                else length=record.length end
+            end
+        end
+        if x then
+            local alpha=zMapDB.hudOpacity
+            if distance>inner then alpha=alpha*max(0,(1-sqrt(distance)/radius)/.3) end
+            if alpha>=.015 and length2>=1 then
+                used=used+1
+                if record.x~=x or record.y~=y or record.u~=u or record.v~=w then
+                    record.x=x;record.y=y;record.u=u;record.v=w
+                    record.length2=length2;record.length=length;record.geometry=record.geometry+1;changed=true
+                end
+                if record.alpha~=alpha then record.alpha=alpha;changed=true end
+                if visible[used]~=record then visible[used]=record;changed=true end
+                if used>=limit then break end
+            end
+        end
+    end
+    for i=used+1,table.getn(visible) do visible[i]=nil;changed=true end
+    -- A later query may contain fewer records; do not retain old geometry.
+    for i=table.getn(ctx.walls)+1,table.getn(records) do records[i]=nil end
+    prepared.x=v.x;prepared.y=v.y;prepared.walls=ctx.walls;prepared.width=v.width;prepared.height=v.height
+    prepared.scale=v.scale;prepared.opacity=zMapDB.hudOpacity;prepared.limit=limit
+    ctx.wallShown=used
+    return changed
+end
 function M:RenderHUDWalls(ctx,angle)
-    local v=ctx.view
-    local draw=ctx.wallDraw
-    if not draw or draw.x~=v.x or draw.y~=v.y or abs(draw.angle-angle)>.001 or draw.walls~=ctx.walls or
-        draw.width~=v.width or draw.height~=v.height or draw.scale~=v.scale or draw.opacity~=zMapDB.hudOpacity then
-        local bx,by=ctx.wallBaseX,ctx.wallBaseY
-        if not draw or draw.angle~=angle or draw.walls~=ctx.walls or draw.width~=v.width or
-            draw.height~=v.height or draw.scale~=v.scale then
-            bx=v.x;by=v.y;ctx.wallBaseX=bx;ctx.wallBaseY=by
+    local v=ctx.view;local draw=ctx.wallDraw
+    if draw and draw.x==v.x and draw.y==v.y and abs(draw.angle-angle)<=.001 and draw.walls==ctx.walls and
+        draw.width==v.width and draw.height==v.height and draw.scale==v.scale and
+        draw.opacity==zMapDB.hudOpacity and draw.limit==self.hudWallLimit then return end
+    local changed=prepareWalls(ctx,self.hudWallLimit)
+    local c,s,scale=ctx.cos,ctx.sin,v.scale
+    local offsetX=(c*(ctx.wallBaseX-v.x)-s*(ctx.wallBaseY-v.y))*scale
+    local offsetY=(s*(ctx.wallBaseX-v.x)+c*(ctx.wallBaseY-v.y))*scale
+    if ctx.wallOffsetX~=offsetX or ctx.wallOffsetY~=offsetY then
+        ctx.layers.walls:SetPoint("TOPLEFT",ctx.viewport,"TOPLEFT",offsetX,-offsetY)
+        ctx.wallOffsetX=offsetX;ctx.wallOffsetY=offsetY
+    end
+    if changed or not draw or draw.angle~=angle then
+        local cx,cy=v.width/2,v.height/2
+        local rotated=not draw or draw.angle~=angle
+        for i,record in ipairs(ctx.wallVisible) do
+            local texture=ctx.wallTextures[i]
+            if not rotated and texture and texture.hudRecord==record and texture.hudGeometry==record.geometry then
+                -- Straight movement leaves an unclipped wall's local geometry
+                -- alone. Only an edge wall's radial opacity may need a setter.
+                if not texture.hudAlpha or abs(texture.hudAlpha-record.alpha)>.000001 then
+                    texture:SetVertexColor(.74,.84,.81,record.alpha);texture.hudAlpha=record.alpha
+                end
+                if not texture.hudShown then texture:Show();texture.hudShown=true end
+            else
+                local x,y=cx+c*record.x-s*record.y,cy+s*record.x+c*record.y
+                local u,w=cx+c*record.u-s*record.v,cy+s*record.u+c*record.v
+                drawWall(ctx,i,x,y,u,w,record.alpha,record.length2,record.length,ctx.layers.walls,true)
+                texture=ctx.wallTextures[i];texture.hudRecord=record;texture.hudGeometry=record.geometry
+            end
         end
-        local c,s,scale=ctx.cos,ctx.sin,v.scale
-        local offsetX=(c*(bx-v.x)-s*(by-v.y))*scale
-        local offsetY=(s*(bx-v.x)+c*(by-v.y))*scale
-        if ctx.wallOffsetX~=offsetX or ctx.wallOffsetY~=offsetY then
-            ctx.layers.walls:SetPoint("TOPLEFT",ctx.viewport,"TOPLEFT",offsetX,-offsetY)
-            ctx.wallOffsetX=offsetX;ctx.wallOffsetY=offsetY
-        end
-        local used=0
-        for _,wall in ipairs(ctx.walls) do
-            local x,y=wall[1]-bx,wall[2]-by;local u,w=wall[3]-bx,wall[4]-by
-            x,y=v.width/2+(c*x-s*y)*scale+offsetX,v.height/2+(s*x+c*y)*scale+offsetY
-            u,w=v.width/2+(c*u-s*w)*scale+offsetX,v.height/2+(s*u+c*w)*scale+offsetY
-            if ctx:HUDLine(used+1,x,y,u,w,zMapDB.hudOpacity) then used=used+1 end
-            if used>=self.hudWallLimit then break end
-        end
-        for i=used+1,table.getn(ctx.wallTextures) do
+        for i=ctx.wallShown+1,table.getn(ctx.wallTextures) do
             local texture=ctx.wallTextures[i]
             if texture.hudShown then texture:Hide();texture.hudShown=false end
         end
-        ctx.wallShown=used
-        draw=draw or {};ctx.wallDraw=draw
-        draw.x=v.x;draw.y=v.y;draw.angle=angle;draw.walls=ctx.walls
-        draw.width=v.width;draw.height=v.height;draw.scale=v.scale;draw.opacity=zMapDB.hudOpacity
     end
+    draw=draw or {};ctx.wallDraw=draw
+    draw.x=v.x;draw.y=v.y;draw.angle=angle;draw.walls=ctx.walls
+    draw.width=v.width;draw.height=v.height;draw.scale=v.scale;draw.opacity=zMapDB.hudOpacity;draw.limit=self.hudWallLimit
 end
 function M:UpdateHUD(elapsed,pose)
     if not zMapDB.hudEnabled or not self.miniWorld or self.frame and self.frame:IsShown() or WorldMapFrame and WorldMapFrame:IsShown() then
@@ -448,10 +596,18 @@ function M:UpdateHUD(elapsed,pose)
     local dt=self.hudElapsed
     if refresh then self.hudElapsed=0 end
     if not refresh and not self.hudContext then return end
+    local perf=OctoPerf;local started,token
+    if perf and perf.BeginOperation and perf.EndOperation then started,token=perf.BeginOperation() end
+    local part=started and perf.BeginOperation()
     local mini=self.miniContext and self.miniContext.frame:IsShown()
     if refresh and not mini then self:SamplePlayer();self:UpdateGather(dt) end
     local p=pose or self:ReadFollowPlayer()
-    if not p then if self.hudContext then self.hudContext.frame:Hide() end;return end
+    if part then perf.EndOperation("zMap HUD sampling",part,token) end
+    if not p then
+        if self.hudContext then self.hudContext.frame:Hide() end
+        if started then perf.EndOperation("zMap HUD full update",started,token) end
+        return
+    end
     local ctx=self.hudContext or self:CreateHUDContext();local v=ctx.view
     local diameter=min(640,UIParent:GetWidth()*.6,UIParent:GetHeight()*.8)
     v.width=diameter;v.height=diameter
@@ -462,27 +618,46 @@ function M:UpdateHUD(elapsed,pose)
     if ctx.frame:GetHeight()~=v.height then ctx.frame:SetHeight(v.height) end
     self:UpdateHUDCamera(elapsed,p);self:AnchorHUD(ctx,p);ctx.frame:Show()
     self:UpdateHUDFloor(ctx,p,elapsed)
+    part=started and perf.BeginOperation()
     local q=ctx.wallQuery
     local floorZ=ctx.floorZ
-    if refresh and (not q or q.space~=p.space or (q.x-p.x)^2+(q.y-p.y)^2>100 or q.range~=zMapDB.hudRange or
-        floorZ and (not q.z or abs(q.z-floorZ)>3) or not floorZ and q.z) then
-        if not q or q.space~=p.space or floorZ and q.z and abs(q.z-floorZ)>3 then ctx.walls={} end
-        self:StartHUDWallQuery()
-    end
     if refresh then
-        self:StepHUDWallQuery()
+        local distance=q and (q.x-p.x)^2+(q.y-p.y)^2 or 0
+        local invalid=not q or q.space~=p.space or distance>40000 or q.filter~=zMapDB.hudHeightFilter or q.range~=zMapDB.hudRange
+        local heightChanged=zMapDB.hudHeightFilter~="off" and
+            (floorZ and (not q or not q.z or abs(q.z-floorZ)>3) or not floorZ and q and q.z)
+        if invalid or not ctx.wallJob and (not ctx.wallReport or ctx.wallReport.query~=q or distance>100 or heightChanged) then
+            -- Let a bounded scan finish while running over slopes. Restarting
+            -- every ten yards/three yards of height could starve dense queries.
+            -- Keep the previous floor visible until its replacement is ready.
+            if not q or q.space~=p.space or distance>40000 then ctx.walls={};ctx.wallReport=nil end
+            self:StartHUDWallQuery()
+        end
+    end
+    if refresh then self:StepHUDWallQuery() end
+    if part then perf.EndOperation("zMap HUD wall query",part,token) end
+    part=started and perf.BeginOperation()
+    if refresh then
         ctx:RenderGatherMarkers();ctx:UpdateGatherVisuals(dt);ctx:RenderPFQuest()
         for _,marker in ipairs(rawget(ctx,"pfMarkers") or {}) do
             if marker:IsShown() then marker.hudBaseAlpha=marker:GetAlpha()*.85 end
         end
     end
-    self:RenderHUDWalls(ctx,angle);ctx:ReprojectFollowMarkers();self:RenderHUDUnits(ctx,p)
+    if part then perf.EndOperation("zMap HUD icon refresh",part,token) end
+    part=started and perf.BeginOperation()
+    self:RenderHUDWalls(ctx,angle)
+    if part then perf.EndOperation("zMap HUD wall rendering",part,token) end
+    part=started and perf.BeginOperation()
+    ctx:ReprojectFollowMarkers();self:RenderHUDUnits(ctx,p)
+    if part then perf.EndOperation("zMap HUD marker motion",part,token) end
+    if started then perf.EndOperation("zMap HUD full update",started,token) end
 end
 function M:InitializeHUD()
     zMapDB.hudEnabled=zMapDB.hudEnabled==true;zMapDB.hudQuests=zMapDB.hudQuests==true
     for _,key in ipairs({"hudPlayer","hudPet","hudTarget","hudParty"}) do zMapDB[key]=zMapDB[key]~=false end
     zMapDB.hudRange=self.Clamp(tonumber(zMapDB.hudRange) or 240,120,360)
     zMapDB.hudOpacity=self.Clamp(tonumber(zMapDB.hudOpacity) or .35,.1,.6)
+    if zMapDB.hudHeightFilter~="relaxed" and zMapDB.hudHeightFilter~="off" then zMapDB.hudHeightFilter="normal" end
     zMapDB.hudOffsetX=offsetValue(zMapDB.hudOffsetX);zMapDB.hudOffsetY=offsetValue(zMapDB.hudOffsetY)
     if zMapDB.hudProjectionVersion~=1 then
         zMapDB.hudCenterX=nil;zMapDB.hudCenterY=nil;zMapDB.hudCamera=nil

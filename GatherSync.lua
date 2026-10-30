@@ -34,8 +34,9 @@ function M:InitializeGatherSync()
     if zMapDB.gatherSharing==nil then zMapDB.gatherSharing=true end
     self.gatherShareClock=0;self.gatherShareNext=0;self.gatherShareHello=0;self.gatherShareJoin=0
     self.gatherShareQueue={};self.gatherShareQueued={};self.gatherShareHeard={};self.gatherSharePeers={}
-    self.gatherShareTokens=64;self.gatherShareSent=0;self.gatherShareReceived=0
+    self.gatherShareTokens=64;self.gatherShareSent=0;self.gatherShareReceived=0;self.gatherSharePacketsReceived=0
     self.gatherShareError=nil
+    self.gatherShareManual=nil
     self.gatherShareMaps={}
     for _,zone in ipairs(self.data.zones) do self.gatherShareMaps[zone.map]=true end
     if not self.gatherSyncFrame then
@@ -46,8 +47,8 @@ function M:InitializeGatherSync()
             if event=="PLAYER_ENTERING_WORLD" then
                 M.gatherShareWorld=true;M.gatherShareJoin=M.gatherShareClock+5;M.gatherShareHello=0
             elseif event=="PLAYER_LEAVING_WORLD" then M.gatherShareWorld=false
-            elseif event=="CHAT_MSG_CHANNEL" then M:ReceiveGatherShare(arg1,arg2,arg9)
-            elseif event=="CHAT_MSG_CHANNEL_NOTICE" and type(arg9)=="string" and string.lower(arg9)==string.lower(CHANNEL) then
+            elseif event=="CHAT_MSG_CHANNEL" then M:ReceiveGatherShare(arg1,arg2,M:SyncEventChannel())
+            elseif event=="CHAT_MSG_CHANNEL_NOTICE" and M:SyncEventChannel()==string.lower(CHANNEL) then
                 M:HideGatherChannel()
             end
         end)
@@ -67,6 +68,7 @@ function M:SetGatherSharing(enabled)
     zMapDB.gatherSharing=enabled
     self.gatherShareQueue={};self.gatherShareQueued={};self.gatherShareSweep=nil
     self.gatherShareSweepAgain=nil;self.gatherHiddenChannel=nil;self.gatherShareError=nil
+    self.gatherShareManual=nil
     self:SyncIdle("gather")
     if not enabled then
         if LeaveChannelByName then LeaveChannelByName(CHANNEL) end
@@ -74,6 +76,18 @@ function M:SetGatherSharing(enabled)
         self.gatherShareJoin=self.gatherShareClock;self.gatherShareHello=0
     end
     if self.gatherPanel then self:RefreshGatherPanel() end
+end
+function M:RequestGatherShare()
+    if not zMapDB.gatherSharing then self:Print("Turn Share on before requesting a node share.");return false end
+    if not self.gatherLog then self:Print("Node log unavailable; sharing cannot start.");return false end
+    if self.gatherShareManual then self:Print("A manual node share is already queued. "..self:SyncWaitText());return true end
+    self.gatherShareManual=true;self.gatherShareSweep=nil
+    self.gatherShareHello=0;self.gatherShareJoin=math.min(self.gatherShareJoin,self.gatherShareClock)
+    self:StartGatherShareSweep()
+    self.gatherShareNext=math.min(self.gatherShareNext,self.gatherShareClock)
+    -- Queue work without resetting the common chat/server safety deadlines.
+    self:Print("Node share queued. "..self:SyncWaitText())
+    return true
 end
 function M:QueueGatherShare(location)
     if not zMapDB.gatherSharing or self.gatherShareQueued[location.id] then return end
@@ -119,6 +133,9 @@ function M:SendGatherShare(message,id,retry)
 end
 function M:UpdateGatherSync(elapsed)
     self.gatherShareClock=self.gatherShareClock+elapsed
+    if self.gatherShareTooltip and self.gatherShareClock>=(self.gatherShareTooltipAt or 0) then
+        self.gatherShareTooltipAt=self.gatherShareClock+.5;self:ShowGatherShareTooltip()
+    end
     self.gatherShareTokens=math.min(64,self.gatherShareTokens+elapsed*16)
     if not zMapDB.gatherSharing or not self.gatherShareWorld or not self.gatherLog or not SendChatMessage then self:SyncIdle("gather");return end
     local now=self.gatherShareClock
@@ -148,17 +165,22 @@ function M:UpdateGatherSync(elapsed)
             packed[node.id]=true;table.insert(records,wire);table.insert(nodes,node);length=length+string.len(wire)+1
         end
     end
-    if table.getn(records)==0 then self.gatherShareNext=now+.25;self:SyncIdle("gather");return end
+    if table.getn(records)==0 then
+        if not self.gatherShareSweep and table.getn(self.gatherShareQueue)==0 then self.gatherShareManual=nil end
+        self.gatherShareNext=now+.25;self:SyncIdle("gather");return
+    end
     local ok=self:SendGatherShare(HEADER.."D:"..table.concat(records,";"),id,function()
         for _,node in ipairs(nodes) do self.gatherShareHeard[node.id]=nil;self:QueueGatherShare(node) end
     end)
     if ok then
         for _,node in ipairs(nodes) do self.gatherShareHeard[node.id]=now end
+        local sweep=self.gatherShareSweep
+        if table.getn(self.gatherShareQueue)==0 and (not sweep or sweep.cursor>sweep.last) then self.gatherShareManual=nil end
     else for _,node in ipairs(nodes) do self:QueueGatherShare(node) end end
 end
 function M:ReceiveGatherShare(message,sender,channel)
     if not self.ready or not zMapDB.gatherSharing or not self.gatherShareWorld or not self.gatherLog or
-        type(channel)~="string" or string.lower(channel)~=string.lower(CHANNEL) or
+        self:SyncChannelName(channel)~=string.lower(CHANNEL) or
         type(message)~="string" or string.len(message)>230 or
         (string.sub(message,1,5)~=HEADER and string.sub(message,1,5)~="ZMN1|") or
         type(sender)~="string" or string.len(sender)>64 or sender==UnitName("player") then return end
@@ -180,6 +202,7 @@ function M:ReceiveGatherShare(message,sender,channel)
         local _,_,count,sum=string.find(message,"^ZMN1:H:(%d+):(%d+)$")
         count=tonumber(count);sum=tonumber(sum)
         if not count or count>20000 or not sum or sum>=2147483647 then return end
+        peer.valid=now;self.gatherSharePacketsReceived=self.gatherSharePacketsReceived+1
         if count~=table.getn(self.gatherLogNodes) or sum~=(self.gatherLogChecksum or 0) then
             -- Coalesce requests and exchange one reciprocal summary per peer.
             -- A reply must not provoke another full-log/hello reply loop.
@@ -197,7 +220,7 @@ function M:ReceiveGatherShare(message,sender,channel)
         return
     end
     if string.sub(message,6,7)~="D:" then return end
-    local changed=false;local records=0
+    local changed=false;local accepted=false;local records=0
     for wire in string.gfind(string.sub(message,8),"[^;]+") do
         records=records+1;if records>3 then break end
         local _,_,entry,map,x,y,z,code=string.find(wire,"^(%d+),(%d+),([%d%.%-]+),([%d%.%-]+),([%d%.%-]+),([hoft])$")
@@ -214,13 +237,34 @@ function M:ReceiveGatherShare(message,sender,channel)
                 local definition=self.gatherDefinitions[self:AddGatherDefinition(info)]
                 local node,added=self:StoreGatherLocation(map,entry,definition,x,y,z)
                 if node then
+                    accepted=true
                     self.gatherShareHeard[node.id]=now
                     if added then node.record.shared=true;changed=true;self.gatherShareReceived=self.gatherShareReceived+1 end
                 end
             end
         end
     end
+    if accepted then peer.valid=now;self.gatherSharePacketsReceived=self.gatherSharePacketsReceived+1 end
     if changed then
         if self.gatherPanel and self.gatherPanel:IsShown() then self:RefreshGatherPanel() else self:RenderGatherMarkers() end
     end
+end
+function M:GatherSharePeerCount()
+    local count=0;local now=self.gatherShareClock or 0
+    for _,peer in pairs(self.gatherSharePeers or {}) do if peer.valid and now-peer.valid<=900 then count=count+1 end end
+    return count
+end
+function M:GatherShareBacklog()
+    local queued=table.getn(self.gatherShareQueue or {});local sweep=self.gatherShareSweep
+    local text=queued.." queued"
+    if self.gatherShareManual then text="manual share pending, "..text end
+    if sweep then text=text..", "..math.max(0,sweep.last-sweep.cursor+1).." history entries to check" end
+    return text
+end
+function M:GatherShareReceiveText()
+    if not zMapDB.gatherSharing then return "Sharing off: no nodes sent or received." end
+    if not self.gatherLog then return "Node log unavailable." end
+    if not self.gatherShareWorld then return "Receiving waits until you enter the world." end
+    if not channelID() then return "Receiving waits for the node channel." end
+    return "Receiving continues while sending waits."
 end

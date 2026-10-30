@@ -383,7 +383,7 @@ function M:BuildUI()
     viewport:SetPoint("TOPLEFT",f,"TOPLEFT",10,-77)
     surface(viewport,.075,.12,.15); viewport:EnableMouse(true); viewport:EnableMouseWheel(true)
     self.layers={}
-    local layers={"overview","art","artFine","terrain","fine","detail","caves","interior","transitRoutes","gather","transit","questRoutes","quests","markers"}
+    local layers={"overview","art","artFine","terrain","fine","detail","caves","interior","rested","transitRoutes","gather","transit","questRoutes","quests","markers"}
     for i,name in ipairs(layers) do
         local layer=CreateFrame("Frame",nil,viewport)
         layer:SetAllPoints(viewport); layer:SetFrameLevel(viewport:GetFrameLevel()+i)
@@ -524,6 +524,7 @@ function M:Initialize()
     self:InitializeSync()
     self:InitializeGather()
     self:InitializeTransports()
+    self:InitializeRested()
     if type(zMapDB.pins)~="table" then zMapDB.pins={} end
     if zMapDB.layoutVersion~=self.data.layoutVersion then
         for _,pin in ipairs(zMapDB.pins) do
@@ -575,7 +576,11 @@ SlashCmdList["ZMAP"]=function(message)
         if zMapDB.hudEnabled then M:Print("HUD: on | "..(M.hudContext and M.hudContext.wallShown or 0).."/"..M.hudWallLimit.." wall lines | quests "..(zMapDB.hudQuests and "on" or "off").." | "..(M.hudContext and M.hudContext.anchorMode or "waiting for position")..".") end
         local cache=M.hudContext and M.hudContext.wallCache
         if cache then M:Print("HUD cache: "..cache.size.."/"..M.hudWallCacheLimit.." wall slots | "..cache.hits.." reused | "..cache.decoded.." decoded.") end
+        if zMapDB.hudEnabled then M:HUDStatus() end
+        M:RestedStatus()
     elseif message=="nodes reset" then M:ResetGatherVisibility()
+    elseif message=="sync" or message=="sync status" then M:SyncStatus()
+    elseif message=="sync now" then M:RequestGatherShare()
     elseif message=="nodes" then M:ToggleGatherPanel()
     elseif message=="transit" then M:ToggleTransportPanel()
     elseif message=="settings" then M:ToggleSettingsPanel()
@@ -584,9 +589,13 @@ SlashCmdList["ZMAP"]=function(message)
     elseif message=="hud center" then M:CenterHUDOnPlayer()
     elseif message=="hud position" then M:ToggleHUDPositionPanel()
     elseif message=="hud settings" then M:ToggleHUDSettingsPanel()
+    elseif message=="hud height" then M:CycleHUDHeightFilter();M:Print("HUD height filter: "..zMapDB.hudHeightFilter..".")
+    elseif message=="hud status" then M:HUDStatus()
+    elseif message=="rested" then M:SetRestedOverlay(not zMapDB.restOverlay);M:RestedStatus()
+    elseif message=="rested status" then M:RestedStatus()
     elseif message=="hud quests" then zMapDB.hudQuests=not zMapDB.hudQuests;M:RefreshSettingsPanel();M:Print("HUD quests: "..(zMapDB.hudQuests and "on" or "off")..".")
     elseif message=="help" then
-        M:Print("/zmap, /zmap hud, /zmap hud settings, /zmap hud center, /zmap hud align, /zmap hud position, /zmap hud quests, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
+        M:Print("/zmap, /zmap hud, /zmap hud settings, /zmap hud center, /zmap hud align, /zmap hud position, /zmap hud quests, /zmap hud height, /zmap hud status, /zmap rested, /zmap rested status, /zmap sync status, /zmap sync now, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
     else M:Toggle() end
 end
 local events=CreateFrame("Frame")

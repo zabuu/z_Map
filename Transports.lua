@@ -65,8 +65,8 @@ function M:InitializeTransports()
         elseif event=="CHAT_MSG_SYSTEM" then
             local uptime=M:ParseTransportUptime(arg1)
             if uptime then M:OnTransportBoot(M:TransportNow()-uptime);M.transportUptimeConfirmed=true;M.transportQueryAt=nil end
-        elseif event=="CHAT_MSG_CHANNEL" then M:ReceiveTransportShare(arg1,arg2,arg9)
-        elseif event=="CHAT_MSG_CHANNEL_NOTICE" and type(arg9)=="string" and string.lower(arg9)=="zmaptransit15" then M:HideTransportChannel()
+        elseif event=="CHAT_MSG_CHANNEL" then M:ReceiveTransportShare(arg1,arg2,M:SyncEventChannel())
+        elseif event=="CHAT_MSG_CHANNEL_NOTICE" and M:SyncEventChannel()=="zmaptransit15" then M:HideTransportChannel()
         end
     end)
     driver:SetScript("OnUpdate",function() if M.ready then M:UpdateTransports(arg1 or 0) end end)

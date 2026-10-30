@@ -165,7 +165,7 @@ function M:UpdateTransportSync(elapsed)
 end
 function M:ReceiveTransportShare(message,sender,channel)
     if not self.ready or not self.transportWorld or not zMapDB.transportsEnabled or not zMapDB.transportSharing or
-        type(channel)~="string" or string.lower(channel)~=string.lower(CHANNEL) or
+        self:SyncChannelName(channel)~=string.lower(CHANNEL) or
         type(message)~="string" or string.len(message)>230 or string.sub(message,1,5)~="ZMT1:" or
         type(sender)~="string" or sender==UnitName("player") or string.len(sender)<1 or string.len(sender)>64 then return end
     local now=self:TransportNow();local up=self:TransportUptime();if not up then return end

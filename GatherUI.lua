@@ -1,6 +1,23 @@
 local M=zMap
 local labels=M.gatherLabels
 local order={herbs=1,ore=2,fish=3,treasure=4}
+function M:ShowGatherShareTooltip()
+    local sharing=self:GatherSharingStatus();local wait=self:SyncWaitText()
+    local traffic=self:GatherSharePeerCount().." peers heard | "..self.gatherShareSent.." packets sent | "..
+        (self.gatherSharePacketsReceived or 0).." received"
+    local backlog=self:GatherShareBacklog()
+    local reception=self:GatherShareReceiveText()
+    local key=sharing..wait..traffic..backlog..reception
+    if self.gatherShareTooltipKey==key then return end
+    self.gatherShareTooltipKey=key
+    GameTooltip:SetOwner(self.gatherShareButton,"ANCHOR_RIGHT");GameTooltip:SetText("Shared node locations")
+    GameTooltip:AddLine("Sharing: "..sharing,.7,.76,.82)
+    GameTooltip:AddLine(wait,.7,.76,.82);GameTooltip:AddLine(traffic,.7,.76,.82)
+    GameTooltip:AddLine(backlog,.7,.76,.82)
+    GameTooltip:AddLine(reception,.7,.76,.82)
+    if self:GatherSharePeerCount()==0 then GameTooltip:AddLine("No other zMap sharer heard yet.",.7,.76,.82) end
+    GameTooltip:AddLine("Shared sites stay gray until you detect them.",.7,.76,.82);GameTooltip:Show()
+end
 function M:LayoutGatherPanel()
     if not self.gatherPanel then return end
     local rows=self.Clamp(math.floor((self.frame:GetHeight()-262)/21),4,12)
@@ -51,8 +68,18 @@ function M:BuildGatherUI(anchor,button,text,surface)
     local panel=CreateFrame("Frame",nil,self.frame);self.gatherPanel=panel
     panel:SetWidth(390);panel:SetHeight(432);panel:SetPoint("TOPRIGHT",anchor,"BOTTOMRIGHT",0,-5)
     panel:SetFrameLevel(self.frame:GetFrameLevel()+40);surface(panel,.035,.045,.06);panel:EnableMouse(true);panel:EnableMouseWheel(true)
-    text(panel,"Gathering nodes",12,-12,270,true)
+    text(panel,"Gathering nodes",12,-12,220,true)
     local close=button(panel,"X",24,function() panel:Hide() end);close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-8,-8)
+    self.gatherShareNowButton=button(panel,"Share now",88,function() self:RequestGatherShare() end)
+    self.gatherShareNowButton:SetPoint("RIGHT",close,"LEFT",-8,0)
+    self.gatherShareNowButton:SetScript("OnEnter",function()
+        GameTooltip:SetOwner(self.gatherShareNowButton,"ANCHOR_RIGHT");GameTooltip:SetText("Share logged locations now")
+        GameTooltip:AddLine("Queues a fresh summary and your logged locations.",.7,.76,.82)
+        GameTooltip:AddLine("Waits for typing and server cooldowns; large logs transfer gradually.",.7,.76,.82)
+        GameTooltip:Show()
+    end)
+    self.gatherShareNowButton:SetScript("OnLeave",function() GameTooltip:Hide() end)
+    self.gatherShareNowButton:SetScript("OnHide",function() GameTooltip:Hide() end)
     self.gatherMaster=button(panel,"Live: on",76,function()
         zMapDB.gatherEnabled=not zMapDB.gatherEnabled
         if zMapDB.gatherEnabled then self:SampleGather() else self:ClearGather("Live gathering is off") end
@@ -74,10 +101,7 @@ function M:BuildGatherUI(anchor,button,text,surface)
     self.gatherShareButton=button(panel,"Share: on",68,function() self:SetGatherSharing(not zMapDB.gatherSharing) end)
     self.gatherShareButton:SetPoint("LEFT",self.gatherLoggedButton,"RIGHT",8,0)
     self.gatherShareButton:SetScript("OnEnter",function()
-        self.gatherShareTooltip=true
-        GameTooltip:SetOwner(self.gatherShareButton,"ANCHOR_RIGHT");GameTooltip:SetText("Shared node locations")
-        GameTooltip:AddLine("Sharing: "..self:GatherSharingStatus(),.7,.76,.82)
-        GameTooltip:AddLine("Shared sites stay gray until you detect them.",.7,.76,.82);GameTooltip:Show()
+        self.gatherShareTooltip=true;self.gatherShareTooltipKey=nil;self:ShowGatherShareTooltip()
     end)
     self.gatherShareButton:SetScript("OnLeave",function() self.gatherShareTooltip=nil;GameTooltip:Hide() end)
     self.gatherShareButton:SetScript("OnHide",function() if self.gatherShareTooltip then self.gatherShareTooltip=nil;GameTooltip:Hide() end end)

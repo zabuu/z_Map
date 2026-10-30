@@ -353,10 +353,12 @@ function M:ReprojectFollowTiles()
             end
         end
     end
+    self:ReprojectRestedOverlay()
 end
 function M:RenderMarkers()
     if not self.playerMarker then return end
     self:RaiseMapPlayer(self)
+    self:RenderRestedOverlay()
     self:RenderGatherMarkers()
     self:RenderTransports()
     self:RenderPFQuest()
