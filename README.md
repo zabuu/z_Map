@@ -1,4 +1,4 @@
-# zMap 1.9.1
+# zMap 1.10.0
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -15,6 +15,10 @@ Alternatively, run `git clone https://github.com/zabuu/z_Map.git z_Map` from `In
 The map works without other addons or native extensions. Live gathering is optional and requires **zAPI 2.4 or later**, installed separately in the game directory; this repository does not install a DLL. Without it, the atlas and saved/shared locations still work. Artwork ownership and the source-code license are explained in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
+
+Version 1.10.0 adds **fast, accepted node-database transfers** between party/raid members. Both players must update and **restart WoW once** to load the new modules. Join the same group, open **Nodes → Transfer** (or `/zmap transfer`), enter the recipient's character name, and click **Send database**. The recipient clicks **Accept** in the incoming window. Progress and the final added/duplicate/skipped counts appear on both ends. `/reload` after receiving saves the merged log to disk.
+
+Bulk transfers use paced party/raid addon messages rather than normal chat or the slow public sharing channel. They work with background Share off, require the same realm, verify the whole snapshot before merging, recover lost packets, and retain existing nodes, settings and local live state. Imported sites stay gray until locally detected. New sites also retain learned respawn samples, without copying active cooldowns or claiming live availability. Group packets are broadcast to the party/raid; only the chosen recipient accepts and imports them. Closing the transfer window lets it continue; Cancel or a loading screen stops it. A canceled merge retains locations already added. An offline 1,704-node test took under two minutes; actual timing depends on the connection and server. The live OctoWoW transfer still needs an in-game check.
 
 Version 1.9.1 fixes **sharing stuck at “paused for chat”** when a chat skin leaves its input shown without focus. Actual focus/composition now controls that pause, while normal chat still reserves 30 quiet seconds and all zMap senders keep their shared 15-second send budget. Channel events accept the client's full numbered channel name when the bare-name field is missing; delayed own packets/echoes no longer count as player chat. **Nodes → Share now**, or `/zmap sync now`, queues a fresh summary and resends logged locations at the next safe slots. Repeated clicks coalesce; large histories transfer gradually, and chat/server cooldowns remain in force. The Share tooltip now shows the wait reason/countdown, peers, sent/received packet counts and backlog. `/zmap sync status` exposes the same diagnostics without sending a packet. Incoming node shares remain active during an outbound pause; another online zMap user with sharing enabled is required. **`/reload`** applies the fix if 1.9.0's new module was already loaded.
 
@@ -96,7 +100,7 @@ At wide zoom, faint dotted lines show schematic service connections across loadi
 
 Version 1.3.3 adds a thin gold rim to currently detected nodes. Resource icons shrink smoothly from 17px to 3px dots at zone level, then fade away before continent/world view. Group and player markers retain their normal behavior.
 
-Respawn swipes use **learned estimates**, with that label on hover. A site needs at least three consistent respawn intervals, observed while you remain within 45 yards and 20 vertical yards with the map and live scans running continuously. Gaps over two seconds, loading, leaving range, scan errors and a hidden map cancel the learning observation. A subsequent disappearance near you starts the learned swipe. Unknown/variable sites stay untimed. The circular ring has no numbers, hides at dot zoom, clears on actual detection and disappears at the estimated end without turning the node colorful. Learned samples and an unexpired estimate save across sessions, while all locations still start unknown after login. Shared locations do not transfer timing estimates or live state.
+Respawn swipes use **learned estimates**, with that label on hover. A site needs at least three consistent respawn intervals, observed while you remain within 45 yards and 20 vertical yards with the map and live scans running continuously. Gaps over two seconds, loading, leaving range, scan errors and a hidden map cancel the learning observation. A subsequent disappearance near you starts the learned swipe. Unknown/variable sites stay untimed. The circular ring has no numbers, hides at dot zoom, clears on actual detection and disappears at the estimated end without turning the node colorful. Learned samples and an unexpired estimate save across sessions, while all locations still start unknown after login. Background channel shares do not transfer timing estimates or live state; accepted bulk transfers include duration samples for new locations only.
 
 Version 1.3.2 fixes the invalid chat escape errors from node sharing. Messages use plain colon separators so WoW accepts them through pfUI and other chat wrappers. Failed sends back off for 30 seconds and leave markers/logs intact. If toggles have hidden everything, `/zmap nodes reset` enables Live, Logged and all resources without clearing locations or changing Share. The panel also explains when filters or display switches hide nodes. Restart WoW if the new circular textures have not yet loaded; otherwise this Lua fix can load with `/reload`.
 
@@ -156,6 +160,7 @@ Group positions can span both continents when the native client reports them. zM
 | `/zmap last` | Reopen the saved view (default) |
 | `/zmap reset` | Fit the whole world |
 | `/zmap status` | Show version, atlas date and recent texture counts |
+| `/zmap transfer` | Open an accepted bulk node transfer to a party/raid member |
 | `/zmap help` | Show controls and commands |
 
 There are no required addons, libraries or injected DLLs. OptionalDeps ensure the toggle wrapper loads after common installed map/UI addons. The map runs using native 1.12 frames, textures and player map positions. zMap has its own rendering window; quest, gathering and flight markers from other addons remain on the original map (`/zmap blizzard`).

@@ -523,6 +523,7 @@ function M:Initialize()
     if zMapDB.interiors~="surface" and zMapDB.interiors~="underground" then zMapDB.interiors="auto" end
     self:InitializeSync()
     self:InitializeGather()
+    self:InitializeGatherTransfer()
     self:InitializeTransports()
     self:InitializeRested()
     if type(zMapDB.pins)~="table" then zMapDB.pins={} end
@@ -581,6 +582,7 @@ SlashCmdList["ZMAP"]=function(message)
     elseif message=="nodes reset" then M:ResetGatherVisibility()
     elseif message=="sync" or message=="sync status" then M:SyncStatus()
     elseif message=="sync now" then M:RequestGatherShare()
+    elseif message=="transfer" then M:ShowGatherTransferPanel()
     elseif message=="nodes" then M:ToggleGatherPanel()
     elseif message=="transit" then M:ToggleTransportPanel()
     elseif message=="settings" then M:ToggleSettingsPanel()
@@ -595,7 +597,7 @@ SlashCmdList["ZMAP"]=function(message)
     elseif message=="rested status" then M:RestedStatus()
     elseif message=="hud quests" then zMapDB.hudQuests=not zMapDB.hudQuests;M:RefreshSettingsPanel();M:Print("HUD quests: "..(zMapDB.hudQuests and "on" or "off")..".")
     elseif message=="help" then
-        M:Print("/zmap, /zmap hud, /zmap hud settings, /zmap hud center, /zmap hud align, /zmap hud position, /zmap hud quests, /zmap hud height, /zmap hud status, /zmap rested, /zmap rested status, /zmap sync status, /zmap sync now, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
+        M:Print("/zmap, /zmap hud, /zmap hud settings, /zmap hud center, /zmap hud align, /zmap hud position, /zmap hud quests, /zmap hud height, /zmap hud status, /zmap rested, /zmap rested status, /zmap sync status, /zmap sync now, /zmap transfer, /zmap settings, /zmap nodes, /zmap nodes reset, /zmap transit, /zmap blizzard, /zmap replace, /zmap player, /zmap last, /zmap reset, /zmap status. Wheel zooms; drag pans; Ctrl-click drops a pin.")
     else M:Toggle() end
 end
 local events=CreateFrame("Frame")

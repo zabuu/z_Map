@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.0 — October 30, 2026
+
+- Added **Nodes → Transfer** and `/zmap transfer` for bulk node-log sharing with a chosen party/raid member. Both players must update, and the recipient must accept the offer.
+- Paced group addon messages, progress, cumulative acknowledgments, bounded retries and whole-snapshot validation transfer large logs without using normal chat. Background sharing and its chat budget are unchanged.
+- Merges and deduplicates locations instead of replacing data. Existing live state, timers and settings stay intact; new sites are gray and may retain learned duration samples. No live availability, GUIDs or active cooldown clocks are copied.
+- Added bounded processing, cancel/loading/group cleanup and 17 offline transfer/codec regressions, including loss, corruption, persistence and the 20,000-location cap. Live OctoWoW delivery still needs an in-game check. Restart WoW once to load the new modules.
+
 ## 1.5.0 — October 17, 2026
 
 - Added animated positions outside local detection range using native transport geometry and known dock/leg timing. Muted `~` vehicle pins identify estimates; loading transitions are skipped and unknown timing never gets an assumed half-cycle flight.
