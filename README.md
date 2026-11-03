@@ -1,4 +1,4 @@
-# zMap 1.10.0
+# zMap 1.10.1
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 
@@ -15,6 +15,8 @@ Alternatively, run `git clone https://github.com/zabuu/z_Map.git z_Map` from `In
 The map works without other addons or native extensions. Live gathering is optional and requires **zAPI 2.4 or later**, installed separately in the game directory; this repository does not install a DLL. Without it, the atlas and saved/shared locations still work. Artwork ownership and the source-code license are explained in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
+
+Version 1.10.1 fixes **Alterac Valley appearing mostly blank** after switching maps. Reused parchment textures could draw over its revealed snow, roads and bases. Native map backgrounds now stay below reveal overlays, including on the zMap minimap. Alterac Valley, Warsong Gulch, Arathi Basin and Thorn Gorge were checked against the installed client artwork, terrain tiles and coordinates, with map-switching/zoom tests. PvP instances with a stale outdoor/other-instance selection or no atlas plan keep the native minimap until the correct map is available. **`/reload`** applies this fix; no new artwork or native extension is needed.
 
 Version 1.10.0 adds **fast, accepted node-database transfers** between party/raid members. Both players must update and **restart WoW once** to load the new modules. Join the same group, open **Nodes → Transfer** (or `/zmap transfer`), enter the recipient's character name, and click **Send database**. The recipient clicks **Accept** in the incoming window. Progress and the final added/duplicate/skipped counts appear on both ends. `/reload` after receiving saves the merged log to disk.
 

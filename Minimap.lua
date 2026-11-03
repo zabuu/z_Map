@@ -272,17 +272,18 @@ function M:DungeonMinimapState(player)
         local ok,a,b=pcall(IsInInstance);if ok then inside=a;kind=b end
     end
     if inside==nil and kind==nil and type(GetInstanceInfo)=="function" then
-        local ok,name,value=pcall(GetInstanceInfo);if ok then kind=value;inside=kind=="party" or kind=="raid" end
+        local ok,name,value=pcall(GetInstanceInfo);if ok then kind=value;inside=kind=="party" or kind=="raid" or kind=="pvp" or kind=="arena" end
     end
-    if inside~=true and inside~=1 or kind=="pvp" or kind=="arena" then return false,true end
-    if not player or not player.zone or player.space=="world" or player.zone.art==false then return true,false end
-    -- A retained outdoor/other-instance world-map selection is not a dungeon
-    -- coordinate source. Let the native minimap show the actual loaded floor.
+    if inside~=true and inside~=1 then return false,true end
+    local dungeon=kind~="pvp" and kind~="arena"
+    if not player or not player.zone or player.space=="world" or player.zone.art==false then return dungeon,false end
+    -- A retained outdoor/other-instance selection is unreliable in PvP too.
+    -- Keep native BG geometry enabled once the selected map is correct.
     if type(UnitPosition)=="function" then
         local ok,y,x,z,map=pcall(UnitPosition,"player")
-        if ok and type(map)=="number" and map==map and map~=player.zone.map then return true,false end
+        if ok and type(map)=="number" and map==map and map~=player.zone.map then return dungeon,false end
     end
-    return true,true
+    return dungeon,true
 end
 function M:UpdateAtlasMinimap(elapsed)
     if not zMapDB.minimapOverride or not self.miniWorld or not Minimap or

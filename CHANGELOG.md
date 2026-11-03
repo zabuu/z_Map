@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.1 — November 2, 2026
+
+- Fixed pooled native-map backgrounds covering reveal overlays, most visibly leaving Alterac Valley blank except for rectangular fragments. Backgrounds retain a lower draw layer even after texture reuse; unchanged renders add no draw-layer setters or texture binds.
+- Checked AV, Warsong Gulch, Arathi Basin and Thorn Gorge against client artwork, all 103 referenced terrain tiles and native coordinate rectangles. Added map switching, zoom, minimap, load-budget and pixel-comparison regressions.
+- PvP/arena minimaps now reject retained outdoor or different-instance coordinates. Unsupported plans retain the game's native minimap and recover automatically when a supported map is selected. Dungeon plans and BG terrain zoom remain enabled.
+- `/reload` applies this update. No assets, map coordinates or native extensions changed.
+
 ## 1.10.0 — October 30, 2026
 
 - Added **Nodes → Transfer** and `/zmap transfer` for bulk node-log sharing with a chosen party/raid member. Both players must update, and the recipient must accept the offer.

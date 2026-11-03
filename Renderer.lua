@@ -27,20 +27,22 @@ function M:PositionClippedTexture(t,sx,sy,sw,sh,ul,ur,vt,vb,alpha,u1,u2,v1,v2)
     if t.zAlpha~=alpha then t:SetAlpha(alpha);t.zAlpha=alpha end
     if not t.zShown then t:Show();t.zShown=true end
 end
-function M:Texture(poolName,path,x,y,w,h,alpha,u1,u2,v1,v2)
+function M:Texture(poolName,path,x,y,w,h,alpha,u1,u2,v1,v2,drawLayer)
     if not alpha or alpha<=.002 then return true end
     local sx,sy,sw,sh,ul,ur,vt,vb=self:Clip(x,y,w,h)
     if not sx then return true end
     local pool=self.pools[poolName]
     if not pool then pool={used=0,items={},byPath={},free={}};self.pools[poolName]=pool end
     local t=pool.byPath[path]
+    drawLayer=drawLayer or "ARTWORK"
     if not t then
         if self.loadsLeft<=0 then self.pending=true;pool.pending=true;return false end
         t=table.remove(pool.free)
-        if not t then t=self.layers[poolName]:CreateTexture(nil,"ARTWORK") end
+        if not t then t=self.layers[poolName]:CreateTexture(nil,drawLayer);t.zDrawLayer=drawLayer end
         t:SetTexture(path);t.zMapPath=path;pool.byPath[path]=t
         self.loadsLeft=self.loadsLeft-1;self.stats.loads=self.stats.loads+1
     end
+    if t.zDrawLayer~=drawLayer then t:SetDrawLayer(drawLayer);t.zDrawLayer=drawLayer end
     if t.zSerial==self.serial then return true end
     t.zSerial=self.serial;pool.used=pool.used+1;pool.items[pool.used]=t
     if self.smoothFollow then
@@ -92,8 +94,10 @@ function M:NativeArt(zone,alpha)
     for row=0,2 do for col=0,3 do
         local pw,ph=min(256,1002-col*256),min(256,668-row*256)
         self:Texture("detail","Interface\\WorldMap\\"..file.."\\"..file..(row*4+col+1),
-            zone.x+col*256/1002*zone.w,zone.y+row*256/668*zone.h,pw/1002*zone.w,ph/668*zone.h,1,0,pw/256,0,ph/256)
+            zone.x+col*256/1002*zone.w,zone.y+row*256/668*zone.h,pw/1002*zone.w,ph/668*zone.h,1,0,pw/256,0,ph/256,"BACKGROUND")
     end end
+    -- Pool reuse changes creation order. Keep revealed roads/terrain above the
+    -- blank parchment even when an older overlay texture is reused first.
     for _,tile in ipairs(self.data.overlays[zone.id] or {}) do
         self:Texture("detail",tile[1],zone.x+tile[2]/1002*zone.w,zone.y+tile[3]/668*zone.h,
             tile[4]/1002*zone.w,tile[5]/668*zone.h,1,0,tile[6],0,tile[7])
