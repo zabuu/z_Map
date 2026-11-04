@@ -12,7 +12,7 @@ Part of the [zSuite addons by Zab](https://github.com/zabuu). Public repository:
 
 Alternatively, run `git clone https://github.com/zabuu/z_Map.git z_Map` from `Interface\AddOns`.
 
-The map works without other addons or native extensions. Live gathering is optional and requires **zAPI 2.4 or later**, installed separately in the game directory; this repository does not install a DLL. Without it, the atlas and saved/shared locations still work. Artwork ownership and the source-code license are explained in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
+The map works without other addons or native extensions. Live gathering and native HUD projection use the optional **[zAPI.dll dependency](https://github.com/zabuu/zAPI#installation)** (2.4 or later for live gathering). Follow that repository's guide for the DLL download, placement beside `WoW.exe`, the `dlls.txt` entry and a full restart. Git/addon-manager installation does not install a DLL. Without it, the atlas and saved/shared locations still work. Artwork ownership and the source-code license are explained in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
 Enable **zMap** in the character selection AddOns list after restarting the client. Press **M**, `/zmap`, or `/zm` to open it. The world map microbutton also opens zMap.
 
