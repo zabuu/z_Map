@@ -112,9 +112,10 @@ function M:UpdateWorldGatherIcons(elapsed)
     self.worldGatherMarkers=self.worldGatherMarkers or {};self.worldGatherFree=self.worldGatherFree or {}
     self.worldGatherSerial=(self.worldGatherSerial or 0)+1
     local epoch=self.worldGatherSerial;local shown=0
+    -- zAPI returns normalized screen coordinates. UIParent's dimensions
+    -- already include its UI scale; a second WorldFrame/UI scale factor
+    -- pushes every world icon away from the screen origin.
     local width,height=UIParent:GetWidth(),UIParent:GetHeight()
-    local worldScale=WorldFrame and WorldFrame:GetEffectiveScale() or UIParent:GetEffectiveScale()
-    local uiScale=UIParent:GetEffectiveScale();local factor=uiScale>0 and worldScale/uiScale or 1
     for _,node in ipairs(self.worldGatherCandidates or {}) do
         local guid=node.guid;local marker=self.worldGatherMarkers[guid]
         local live=self.gatherByGUID[guid]==node and node.epoch==self.gatherEpoch and
@@ -122,7 +123,6 @@ function M:UpdateWorldGatherIcons(elapsed)
         if live and finite(node.worldX) and finite(node.worldY) and finite(node.z) then
             if marker then marker.worldEpoch=epoch end
             local ok,x,y,depth=pcall(zAPI,"worldToScreen",node.worldX,node.worldY,node.z+.35)
-            if finite(x) and finite(y) then x=x*factor;y=y*factor end
             if ok and finite(x) and finite(y) and finite(depth) and depth>0 and x>=0 and x<=1 and y>=0 and y<=1 then
                 if not marker then
                     marker=table.remove(self.worldGatherFree)

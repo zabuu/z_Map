@@ -1,4 +1,6 @@
-# zMap 1.10.1
+# zMap 1.10.2
+
+Version 1.10.2 fixes world node icons displaced from their resources at non-default UI scales. Normalized zAPI projections map through UIParent's dimensions once, without an additional WorldFrame/UIParent scale multiplier. `/reload` applies this correction.
 
 Standalone seamless atlas for the installed OctoWoW 1.12 client, with zSuite's dark window, mint branding, `z_Map` folder, `zMapDB` settings and zSuite keybinding group.
 

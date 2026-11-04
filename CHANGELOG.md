@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.10.2 — November 4, 2026
+
+- Fixed world gathering icons applying UI scaling twice to normalized zAPI screen coordinates. Their anchors now use UIParent's dimensions once, including at 0.9 UI scale.
+- Existing node data and user settings are retained. `/reload` loads the correction.
+
 ## 1.10.1 — November 2, 2026
 
 - Fixed pooled native-map backgrounds covering reveal overlays, most visibly leaving Alterac Valley blank except for rectangular fragments. Backgrounds retain a lower draw layer even after texture reuse; unchanged renders add no draw-layer setters or texture binds.
