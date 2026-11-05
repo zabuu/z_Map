@@ -366,6 +366,7 @@ function M:RenderMarkers()
     self:RenderGatherMarkers()
     self:RenderTransports()
     self:RenderPFQuest()
+    self:RenderTracking()
     local p=self.player
     if p then
         self:PlaceMarker(self.playerMarker,p.x,p.y,p.space)

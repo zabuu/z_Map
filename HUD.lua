@@ -2,7 +2,24 @@
 local M=zMap
 M.hudWallLimit=1536
 M.hudWallCacheLimit=32768
-local DATA=zMapHudData or {models={},placements={},grid={},cell=128}
+-- The 9.6 MB wall database lives in the load-on-demand addon z_Map_HUD and is
+-- only loaded the first time the HUD actually needs walls.
+local EMPTY={models={},placements={},grid={},cell=128}
+local DATA
+local function hudData()
+    if DATA then return DATA end
+    if not zMapHudData and LoadAddOn then
+        local ok,reason=LoadAddOn("z_Map_HUD")
+        if not ok and not zMapHudData then
+            M:Print("HUD walls unavailable: z_Map_HUD did not load ("..tostring(reason or "missing").."). Enable it in the AddOns list.")
+        end
+    end
+    DATA=zMapHudData or EMPTY
+    return DATA
+end
+M.HUDData=hudData
+local function nearerTask(a,b) return a.distance<b.distance end
+local function nearerWall(a,b) return a[5]<b[5] end
 local floor,ceil,abs,min,max,sqrt=math.floor,math.ceil,math.abs,math.min,math.max,math.sqrt
 local alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-"
 local digits={}
@@ -125,7 +142,13 @@ local function wallPage(ctx,task,page)
 end
 function M:StartHUDWallQuery()
     local ctx=self.hudContext;local v=ctx.view;local radius=zMapDB.hudRange*1.25
-    local cell=DATA.cell;local seen,tasks={},{}
+    local DATA=hudData();local cell=DATA.cell
+    -- Scratch tables are reused: a query starts every ~10 yards of movement.
+    local seen=ctx.wallSeen or {};ctx.wallSeen=seen
+    for id in pairs(seen) do seen[id]=nil end
+    local tasks=ctx.wallTasks or {};ctx.wallTasks=tasks
+    local pool=ctx.wallTaskPool or {};ctx.wallTaskPool=pool
+    local count=0
     for x=floor((v.x-radius)/cell),floor((v.x+radius)/cell) do
         for y=floor((v.y-radius)/cell),floor((v.y+radius)/cell) do
             for _,id in ipairs(DATA.grid[v.space..":"..x..":"..y] or {}) do
@@ -136,16 +159,29 @@ function M:StartHUDWallQuery()
                     for cx=floor((localX-radius)/cell),floor((localX+radius)/cell) do
                         for cy=floor((localY-radius)/cell),floor((localY+radius)/cell) do
                             local raw=DATA.models[p[1]][cx..":"..cy]
-                            if raw then table.insert(tasks,{raw=raw,key=id..":"..cx..":"..cy,x=cx*cell,y=cy*cell,placement=p,
-                                distance=(localX-(cx+.5)*cell)^2+(localY-(cy+.5)*cell)^2}) end
+                            if raw then
+                                count=count+1;local task=pool[count]
+                                if not task then task={};pool[count]=task end
+                                task.raw=raw;task.key=id..":"..cx..":"..cy;task.x=cx*cell;task.y=cy*cell;task.placement=p
+                                task.distance=(localX-(cx+.5)*cell)^2+(localY-(cy+.5)*cell)^2;tasks[count]=task
+                            end
                         end
                     end
                 end
             end
         end
     end
-    table.sort(tasks,function(a,b) return a.distance<b.distance end)
-    ctx.wallJob={tasks=tasks,task=1,offset=1,results={},scanned=0,heightRejected=0}
+    for i=count+1,table.getn(tasks) do tasks[i]=nil end
+    table.sort(tasks,nearerTask)
+    -- Results alternate between two buffers whose wall tuples are reused. The
+    -- visible buffer (ctx.walls) is never written while its replacement builds.
+    local buffers=ctx.wallBuffers
+    if not buffers then buffers={{list={},pool={}},{list={},pool={}}};ctx.wallBuffers=buffers end
+    local back=buffers[1].list==ctx.walls and buffers[2] or buffers[1]
+    local list=back.list;for i=table.getn(list),1,-1 do list[i]=nil end
+    local job=ctx.wallJob or ctx.wallJobSpare or {};ctx.wallJob=job;ctx.wallJobSpare=nil
+    job.tasks=tasks;job.task=1;job.offset=1;job.results=list;job.pool=back.pool;job.count=0
+    job.scanned=0;job.heightRejected=0;job.cell=nil;job.page=nil
     ctx.wallQuery={x=v.x,y=v.y,space=v.space,z=ctx.floorZ,range=zMapDB.hudRange,filter=zMapDB.hudHeightFilter}
 end
 function M:StepHUDWallQuery()
@@ -184,19 +220,21 @@ function M:StepHUDWallQuery()
                 end
                 local distance=((x+u)/2-q.x)^2+((y+v)/2-q.y)^2
                 if distance<(q.range*1.25)^2 then
-                    table.insert(job.results,{x,y,u,v,distance})
-                    if table.getn(job.results)>=2400 then break end
+                    local n=job.count+1;job.count=n
+                    local wall=job.pool[n];if not wall then wall={};job.pool[n]=wall end
+                    wall[1]=x;wall[2]=y;wall[3]=u;wall[4]=v;wall[5]=distance;job.results[n]=wall
+                    if n>=2400 then break end
                 end
             else job.heightRejected=job.heightRejected+1 end
         end
     end
-    if not job.tasks[job.task] or job.scanned>=16000 or table.getn(job.results)>=2400 then
-        table.sort(job.results,function(a,b) return a[5]<b[5] end)
+    if not job.tasks[job.task] or job.scanned>=16000 or job.count>=2400 then
+        table.sort(job.results,nearerWall)
         ctx.walls=job.results;ctx.wallScanned=job.scanned
         ctx.wallReport={scanned=job.scanned,heightRejected=job.heightRejected,tasks=table.getn(job.tasks),
-            candidates=table.getn(job.results),z=q.z,filter=q.filter,query=q,
-            limited=job.scanned>=16000 or table.getn(job.results)>=2400}
-        ctx.wallJob=nil
+            candidates=job.count,z=q.z,filter=q.filter,query=q,
+            limited=job.scanned>=16000 or job.count>=2400}
+        ctx.wallJob=nil;ctx.wallJobSpare=job
     end
 end
 function M:CreateHUDContext()
@@ -231,10 +269,13 @@ function M:CreateHUDContext()
         local marker=M.MakePFQuestMarker(self);marker:EnableMouse(false);marker:EnableMouseWheel(false);return marker
     end
     ctx.RenderPFQuestRoutes=function() end
+    ctx.RenderTracking=function(self)
+        if zMapDB.trackHUD then M.RenderTracking(self) else self:HideTracking() end
+    end
     ctx.RenderPFQuest=function(self)
         if zMapDB.hudQuests then M.RenderPFQuest(self) else self:HidePFQuest() end
     end
-    frame:SetScript("OnHide",function() ctx:HidePFQuest() end)
+    frame:SetScript("OnHide",function() ctx:HidePFQuest();ctx:HideTracking() end)
     frame:Hide();self.hudContext=ctx;return ctx
 end
 function M:SetHUD(enabled)
@@ -281,7 +322,7 @@ function M:PlaceHUDUnitDot(ctx,unit,x,y,space,r,g,b,size)
     if not dot:IsShown() then dot:Show() end
     return true
 end
-function M:RenderHUDUnits(ctx,p)
+function M:RenderHUDUnits(ctx,p,refresh)
     ctx.unitDots=ctx.unitDots or {}
     local _,class=UnitClass("player");local r,g,b=self:ClassColor(class)
     styleDot(ctx.playerDot,r,g,b,.95)
@@ -301,13 +342,28 @@ function M:RenderHUDUnits(ctx,p)
     if zMapDB.hudParty then
         local count=GetNumRaidMembers and GetNumRaidMembers() or 0;local prefix="raid"
         if count==0 then prefix="party";count=min(4,GetNumPartyMembers and GetNumPartyMembers() or 0) end
+        -- Up to 40 members: query positions and classes at the 20 Hz refresh
+        -- and only reproject the cached world points on the frames between.
+        local samples=ctx.unitSamples;if not samples then samples={};ctx.unitSamples=samples end
+        if refresh or ctx.unitSampleSerial==nil then
+            ctx.unitSampleSerial=ctx.serial
+            for i=1,40 do
+                local unit=prefix..i;local s=samples[i]
+                if not s then s={};samples[i]=s end
+                s.unit=nil
+                if i<=count and not UnitIsUnit(unit,"player") and (not UnitIsConnected or UnitIsConnected(unit)) then
+                    local x,y,space=self:HUDUnitPoint(unit,p)
+                    if x then
+                        local _,class=UnitClass(unit);s.r,s.g,s.b=self:ClassColor(class)
+                        s.unit=unit;s.x=x;s.y=y;s.space=space
+                    end
+                end
+            end
+        end
         for i=1,min(40,count) do
-            local unit=prefix..i
-            if not UnitIsUnit(unit,"player") and (not UnitIsConnected or UnitIsConnected(unit)) and
-                not (target and UnitIsUnit(unit,"target")) then
-                local x,y,space=self:HUDUnitPoint(unit,p)
-                local _,class=UnitClass(unit);local r,g,b=self:ClassColor(class)
-                self:PlaceHUDUnitDot(ctx,unit,x,y,space,r,g,b,7)
+            local s=samples[i]
+            if s.unit and not (target and UnitIsUnit(s.unit,"target")) then
+                self:PlaceHUDUnitDot(ctx,s.unit,s.x,s.y,s.space,s.r,s.g,s.b,7)
             end
         end
     end
@@ -638,7 +694,7 @@ function M:UpdateHUD(elapsed,pose)
     if part then perf.EndOperation("zMap HUD wall query",part,token) end
     part=started and perf.BeginOperation()
     if refresh then
-        ctx:RenderGatherMarkers();ctx:UpdateGatherVisuals(dt);ctx:RenderPFQuest()
+        ctx:RenderGatherMarkers();ctx:UpdateGatherVisuals(dt);ctx:RenderPFQuest();ctx:RenderTracking()
         for _,marker in ipairs(rawget(ctx,"pfMarkers") or {}) do
             if marker:IsShown() then marker.hudBaseAlpha=marker:GetAlpha()*.85 end
         end
@@ -648,7 +704,7 @@ function M:UpdateHUD(elapsed,pose)
     self:RenderHUDWalls(ctx,angle)
     if part then perf.EndOperation("zMap HUD wall rendering",part,token) end
     part=started and perf.BeginOperation()
-    ctx:ReprojectFollowMarkers();self:RenderHUDUnits(ctx,p)
+    ctx:ReprojectFollowMarkers();self:RenderHUDUnits(ctx,p,refresh)
     if part then perf.EndOperation("zMap HUD marker motion",part,token) end
     if started then perf.EndOperation("zMap HUD full update",started,token) end
 end

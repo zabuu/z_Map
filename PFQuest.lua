@@ -95,7 +95,11 @@ local function priority(meta)
 end
 function M:BuildPFQuestIndex(revision)
     local job={grid={},maps={},index=1,count=0,revision=revision};self.pfBuilder=job
+    -- zMap's own Track menu draws pfQuest's tracking categories; skip
+    -- pfQuest's copies so the same icon is not drawn twice.
+    local skipTracking=self.TrackingEnabled and self:TrackingEnabled()
     for addon,maps in pairs(pfMap.nodes) do
+        if skipTracking and string.find(addon,"^TRACK_") then maps={} end
         for id,nodes in pairs(maps) do
             local zone=self:PFQuestZone(id)
             if zone then table.insert(job.maps,{addon=addon,zone=zone,nodes=nodes}) end

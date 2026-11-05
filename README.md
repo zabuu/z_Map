@@ -1,4 +1,4 @@
-# zMap 1.10.2
+# zMap 1.11.0
 
 Version 1.10.2 fixes world node icons displaced from their resources at non-default UI scales. Normalized zAPI projections map through UIParent's dimensions once, without an additional WorldFrame/UIParent scale multiplier. `/reload` applies this correction.
 
@@ -13,6 +13,8 @@ Part of the [zSuite addons by Zab](https://github.com/zabuu). Public repository:
 3. Fully exit and restart WoW so it discovers the bundled map and marker textures. Enable **zMap** in the AddOns list.
 
 Alternatively, run `git clone https://github.com/zabuu/z_Map.git z_Map` from `Interface\AddOns`.
+
+**HUD walls (optional):** the HUD's wall database is a separate load-on-demand addon. Copy the `z_Map_HUD` folder from this repository to `Interface\AddOns\z_Map_HUD` (so the TOC is at `Interface\AddOns\z_Map_HUD\z_Map_HUD.toc`). zMap loads it the first time the HUD needs walls; it is never loaded while the HUD stays off.
 
 The map works without other addons or native extensions. Live gathering and native HUD projection use the optional **[zAPI.dll dependency](https://github.com/zabuu/zAPI#installation)** (2.4 or later for live gathering). Follow that repository's guide for the DLL download, placement beside `WoW.exe`, the `dlls.txt` entry and a full restart. Git/addon-manager installation does not install a DLL. Without it, the atlas and saved/shared locations still work. Artwork ownership and the source-code license are explained in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
@@ -146,6 +148,8 @@ Group positions can span both continents when the native client reports them. zM
 | `/zmap nodes reset` | Restore Live, Logged and all resource visibility; keep the location log and sharing preference |
 | `/zmap sync status` | Show node-channel connection, chat/send wait, peers, packet counts and queued history |
 | `/zmap sync now` | Queue a fresh manual node share, keeping chat/server cooldowns |
+| `/zmap track` | Open the Track menu: town services, rares, chests, herbs, mines and fishing pools |
+| `/zmap track <category>` | Toggle one category (for example `flight`, `mailbox`, `herbs`); also `status`, `minimap`, `hud`, `none` |
 | `/zmap transit` | Open boat/zeppelin services, routes and dock arrival/departure estimates |
 | `/zmap settings` | Configure the optional atlas minimap and its look |
 | `/zmap hud` | Toggle the transparent, heading-up wall/node overlay |
