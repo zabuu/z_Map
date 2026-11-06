@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.11.0 — November 5, 2026
+
+- Added a Track menu (atlas header, or `/zmap track`) with pfQuest's sixteen tracking categories: town services, rares, chests, herbs, mines and fishing pools. Icons, tooltips, faction filtering and per-node herb/ore/chest icons match pfQuest, so pfQuest, pfQuest-turtle and pfExtend no longer need to be loaded for map icons.
+- Tracking data is a 0.3 MB generated file (`TrackingData.lua`) of compact strings. Only enabled categories are decoded, in time slices, into a 1024-yard grid with numeric keys; minimap queries reuse their scratch arrays and allocate nothing.
+- First run imports pfQuest's tracked categories when pfQuest is still loaded; otherwise starts with auctioneer, banker, flight master, mailbox, spirit healer and stable master. Icons show on the atlas and zMap minimap (toggle in the menu) and optionally on the HUD.
+- The HUD's 9.6 MB wall database moved to the load-on-demand addon `z_Map_HUD`. It is loaded the first time the HUD needs walls and is never loaded while the HUD stays off.
+- HUD wall queries reuse their task and result tables (about 9x less garbage per query while moving). Party/raid HUD dots are sampled at the 20 Hz refresh and reprojected every frame, instead of up to 40 position queries per frame.
+- The existing pfQuest bridge is unchanged and still works when pfQuest is loaded.
+
 ## 1.10.2 — November 4, 2026
 
 - Fixed world gathering icons applying UI scaling twice to normalized zAPI screen coordinates. Their anchors now use UIParent's dimensions once, including at 0.9 UI scale.

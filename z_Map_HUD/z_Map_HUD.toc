@@ -1,0 +1,9 @@
+## Interface: 11200
+## Title: |cff59d9c5z|rMap HUD walls
+## Notes: Wall data for the zMap HUD. Loaded automatically the first time the HUD is shown.
+## Author: Samer / Zab
+## Version: 1.11.0
+## Dependencies: z_Map
+## LoadOnDemand: 1
+
+HudData.lua

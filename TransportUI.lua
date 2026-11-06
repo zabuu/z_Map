@@ -322,6 +322,6 @@ function M:ToggleTransportPanel()
     if not self.frame then self:BuildUI() end
     self.frame:Show()
     if self.transportPanel:IsShown() then self.transportPanel:Hide() else
-        self.searchPanel:Hide();self.gatherPanel:Hide();self:RefreshTransportPanel();self.transportPanel:Show()
+        self.searchPanel:Hide();self.gatherPanel:Hide();if self.trackPanel then self.trackPanel:Hide() end;self:RefreshTransportPanel();self.transportPanel:Show()
     end
 end

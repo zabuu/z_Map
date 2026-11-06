@@ -159,6 +159,7 @@ function M:ToggleGatherPanel()
     if not self.frame:IsShown() then self.frame:Show() end
     if self.gatherPanel:IsShown() then self.gatherPanel:Hide() else
         if self.transportPanel then self.transportPanel:Hide() end
+        if self.trackPanel then self.trackPanel:Hide() end
         self.searchPanel:Hide();self:RefreshGatherPanel();self.gatherPanel:Show()
     end
 end

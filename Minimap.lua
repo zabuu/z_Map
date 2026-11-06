@@ -101,9 +101,11 @@ function M:UseNativeMinimapPlayer(enabled)
     -- player model rather than drawing another arrow over a client model.
     self:SuppressNativePlayerArrow(enabled and rotated)
     local arrow=enabled and self:FindNativePlayerArrow() or self.nativeArrow
-    -- The native minimap model can render while IsShown() returns nil. Its
-    -- existence, not that unreliable flag, decides whether to draw a copy.
-    self.miniUsesNativeArrow=enabled and not rotated and arrow and arrow:GetAlpha()>0 or false
+    -- Always draw zMap's own arrow over the atlas. Raising the client's 3D
+    -- arrow model is unreliable on 1.12: it can stay under the atlas art even
+    -- at a higher strata, leaving no player icon. Left at its stock level, the
+    -- model sits behind the opaque atlas and still supplies the facing.
+    self.miniUsesNativeArrow=false
     local level,strata
     if enabled then
         -- Leave room for marker children, live-node rims and quest highlights.
@@ -185,13 +187,13 @@ function M:CreateMinimapContext()
     end
     frame:SetScript("OnHide",function()
         ctx:HideGatherTooltip();ctx:HideGroupTooltip();ctx:HideTransportTooltip()
-        ctx:HidePFQuest();M:RestorePFQuestMinimap();M:UseNativeMinimapPlayer(false);M:RaiseMinimapWidgets(false)
+        ctx:HidePFQuest();ctx:HideTracking();M:RestorePFQuestMinimap();M:UseNativeMinimapPlayer(false);M:RaiseMinimapWidgets(false)
     end)
     frame:Hide();self.miniContext=ctx;return ctx
 end
 function M:RenderMinimapMarkers(ctx)
     ctx:RenderRestedOverlay()
-    ctx:RenderGatherMarkers();ctx:RenderTransports();ctx:RenderPFQuest()
+    ctx:RenderGatherMarkers();ctx:RenderTransports();ctx:RenderPFQuest();ctx:RenderTracking()
     local p=ctx.player
     if p and not self.miniUsesNativeArrow then
         ctx:PlaceMarker(ctx.playerMarker,p.x,p.y,p.space);self:UpdatePlayerArrow(ctx.playerMarker.texture)
@@ -390,7 +392,7 @@ function M:InitializeMinimap()
         end
         if miniElapsed>=.1 then
             local elapsed=miniElapsed;miniElapsed=0
-            self:UpdateAtlasMinimap(elapsed);self:UpdatePFQuest(elapsed)
+            self:UpdateAtlasMinimap(elapsed);self:UpdatePFQuest(elapsed);self:UpdateTracking()
         end
         local mini=self.miniContext and self.miniContext.frame:IsShown()
         local hud=zMapDB.hudEnabled and not (self.frame and self.frame:IsShown())
@@ -525,5 +527,5 @@ end
 function M:ToggleSettingsPanel()
     self:BuildUI();self.frame:Show()
     if self.settingsPanel:IsShown() then self.settingsPanel:Hide()
-    else self.searchPanel:Hide();self.gatherPanel:Hide();self.transportPanel:Hide();self:RefreshSettingsPanel();self.settingsPanel:Show() end
+    else self.searchPanel:Hide();self.gatherPanel:Hide();self.transportPanel:Hide();self.trackPanel:Hide();self:RefreshSettingsPanel();self.settingsPanel:Show() end
 end
