@@ -101,9 +101,11 @@ function M:UseNativeMinimapPlayer(enabled)
     -- player model rather than drawing another arrow over a client model.
     self:SuppressNativePlayerArrow(enabled and rotated)
     local arrow=enabled and self:FindNativePlayerArrow() or self.nativeArrow
-    -- The native minimap model can render while IsShown() returns nil. Its
-    -- existence, not that unreliable flag, decides whether to draw a copy.
-    self.miniUsesNativeArrow=enabled and not rotated and arrow and arrow:GetAlpha()>0 or false
+    -- Always draw zMap's own arrow over the atlas. Raising the client's 3D
+    -- arrow model is unreliable on 1.12: it can stay under the atlas art even
+    -- at a higher strata, leaving no player icon. Left at its stock level, the
+    -- model sits behind the opaque atlas and still supplies the facing.
+    self.miniUsesNativeArrow=false
     local level,strata
     if enabled then
         -- Leave room for marker children, live-node rims and quest highlights.
